@@ -41,22 +41,12 @@ from asyncio import (
     coroutine,
     sleep as asyncio_sleep
 )
-from os import (
-    getenv,
-    listdir,
-    remove as remove_file
-)
 from os.path import (
     dirname,
-    isdir,
-    join as join_path,
     normpath,
     realpath
 )
-from shutil import (
-    copytree,
-    rmtree
-)
+from shutil import rmtree
 from tempfile import mkdtemp
 
 import test_framework.util as tf_util
@@ -67,13 +57,7 @@ from graph import (
 )
 from test_framework.nodes_hub import NodesHub
 from test_framework.test_node import TestNode
-from test_framework.util import (
-    get_datadir_path,
-    initialize_datadir,
-    p2p_port,
-    set_node_times,
-    sync_blocks
-)
+from test_framework.util import initialize_datadir
 
 
 class ForkingSimulation:
@@ -156,74 +140,8 @@ class ForkingSimulation:
             rmtree(self.tmp_dir)
 
     def setup_chain(self):
-        create_cache = False
-
         for i in range(self.num_nodes):
-            if not isdir(get_datadir_path(self.cache_dir, i)):
-                create_cache = True
-                break
-
-        if create_cache:
-            self.create_chain_cache()
-
-        for i in range(self.num_nodes):
-            from_dir = get_datadir_path(self.cache_dir, i)
-            to_dir = get_datadir_path(self.tmp_dir, i)
-            copytree(from_dir, to_dir)
             initialize_datadir(self.tmp_dir, i)
-
-    def create_chain_cache(self):
-        for i in range(self.num_nodes):
-            if isdir(get_datadir_path(self.cache_dir, i)):
-                rmtree(get_datadir_path(self.cache_dir, i))
-
-        for i in range(self.num_nodes):
-            datadir = initialize_datadir(self.cache_dir, i)
-            args = [getenv('UNITED', 'united'), '-server', '-keypool=1', '-datadir=' + datadir, '-discover=0']
-            if i > 0:
-                args.append('-connect=127.0.0.1:%s' % p2p_port(0))
-            self.nodes.append(TestNode(
-                i, self.cache_dir, extra_args=[], rpchost=None, timewait=None, binary=None, stderr=None,
-                mocktime=self.mocktime, coverage_dir=None
-            ))
-            self.nodes[i].args = args
-            self.start_node(i)
-
-        for node in self.nodes:
-            node.wait_for_rpc_connection()
-
-        # Create a 200-block-long chain; each of the 4 first nodes gets 25 mature blocks and 25 immature.
-        # Note: To preserve compatibility with older versions of initialize_chain, only 4 nodes will generate coins.
-        # Blocks are created with timestamps 10 minutes apart starting from 2010 minutes in the past
-        self.enable_mocktime()
-        block_time = self.mocktime - (201 * 10 * 60)
-        for i in range(2):
-            for peer in range(4):
-                for j in range(25):
-                    set_node_times(self.nodes, block_time)
-                    self.nodes[peer].generate(1)
-                    block_time += 10 * 60
-                # Must sync before next peer starts generating blocks
-                sync_blocks(self.nodes)
-
-        # Shut them down, and clean up cache directories:
-        self.stop_nodes()
-        self.nodes = []
-        self.disable_mocktime()
-
-        def cache_path(n, *paths):
-            return join_path(get_datadir_path(self.cache_dir, n), 'regtest', *paths)
-
-        for i in range(self.num_nodes):
-            for entry in listdir(cache_path(i)):
-                if entry not in ['wallets', 'chainstate', 'blocks']:
-                    remove_file(cache_path(i, entry))
-
-    def enable_mocktime(self):
-        self.mocktime = 1388534400 + (201 * 10 * 60)  # 2014/01/01 + (201 * 10 * 60) seconds
-
-    def disable_mocktime(self):
-        self.mocktime = 0
 
     def setup_nodes(self):
         self.nodes = [
