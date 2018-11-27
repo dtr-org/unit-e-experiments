@@ -12,7 +12,10 @@ from os.path import (
 )
 
 
-extra_import_paths = [
-    normpath(dirname(realpath(__file__)) + '/../unit-e')
-]
+unite_repository_path = normpath(dirname(realpath(__file__)) + '/../unit-e')
 
+
+united_binary_path = normpath(unite_repository_path + '/src/united')
+extra_import_paths = [
+    normpath(unite_repository_path + '/test/functional')
+]
