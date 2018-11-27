@@ -7,7 +7,11 @@
 
 from collections import defaultdict
 from functools import reduce
-from random import randint
+from random import (
+    randint,
+    sample,
+    shuffle
+)
 
 
 def create_directed_graph(
@@ -156,6 +160,71 @@ def create_preferential_attachment_graph(
     return directed_edges, inbound_degrees
 
 
+def enforce_nodes_reconnections(
+        graph_edges: set, inbound_degrees: dict, num_reconnection_rounds=1, num_outbound_connections=8
+) -> (set, dict):
+    """
+    This function tries to 'shuffle' the graph by simulating nodes re-connections, this is useful to decrease the
+    probability of having "sink nodes" or "sink sub-graphs" (where information arrives, but does not flow to the rest of
+    the graph), a clear side effect of using the preferential attachment model on a directed graph.
+    """
+    graph_edges = graph_edges.copy()
+    inbound_degrees = inbound_degrees.copy()
+
+    node_ids = list({e[0] for e in graph_edges})
+
+    for i in range(num_reconnection_rounds):
+        shuffle(node_ids)  # We randomize the reconnection steps
+
+        for node_id in node_ids:
+            neighbours2dg = get_node_neighbours(node_id, graph_edges, 1)
+
+            inbound_neighbours = {e[0] for e in graph_edges if e[1] == node_id}
+            neighbours_neighbours = {
+                neighbour: get_node_neighbours(neighbour, graph_edges, 1)
+                for neighbour in inbound_neighbours
+            }
+
+            # Disconnecting node, just for an instant
+            for e in graph_edges.copy():
+                if e[0] == node_id or e[1] == node_id:
+                    graph_edges.remove(e)
+                    inbound_degrees[e[1]] -= 1
+
+            # Reconnecting the node to others
+            num_recreated_outbound_connections = 0
+            while num_recreated_outbound_connections < num_outbound_connections:
+                e = (node_id, sample(neighbours2dg, 1)[0])
+                if e not in graph_edges:
+                    graph_edges.add(e)
+                    inbound_degrees[e[1]] += 1
+                    num_recreated_outbound_connections += 1
+
+            # Reconnecting inbound neighbours
+            for old_neighbour in inbound_neighbours:
+                e = (old_neighbour, sample(neighbours_neighbours[old_neighbour], 1)[0])
+                while e in graph_edges:
+                    e = (old_neighbour, sample(neighbours_neighbours[old_neighbour], 1)[0])
+                graph_edges.add(e)
+                inbound_degrees[e[1]] += 1
+
+    return graph_edges, inbound_degrees
+
+
+def get_node_neighbours(node_id: int, graph_edges: set, degree=1):
+    """Returns the second-degree neighbours of a node in a given graph"""
+    neighbours = {e[0] for e in graph_edges if e[1] == node_id}.union({
+        e[1] for e in graph_edges if e[0] == node_id
+    })
+
+    for i in range(1, degree):
+        neighbours = {e[0] for e in graph_edges if e[1] in neighbours}.union({
+            e[1] for e in graph_edges if e[0] in neighbours
+        })  # n-degree neighbours
+
+    return neighbours.difference({node_id})
+
+
 def compute_degrees(graph_edges: set, num_nodes: int, processed_edges=None, degrees: list = ()) -> (list, set):
     """
     Computes the node degrees without making distinctions between inbound & outbound connections. It returns the list
@@ -182,7 +251,7 @@ def compute_degrees(graph_edges: set, num_nodes: int, processed_edges=None, degr
 
 
 def degrees_distribution(degrees: list) -> list:
-    """Given an ordered list of degrees, it returns a distribution suitable for weighed random elections"""
+    """Given an ordered list of degrees, it returns a distribution suitable for weighed random selections"""
 
     return reduce(lambda dd, d: dd + [dd[-1] + d], degrees, [0])[1:]
 
