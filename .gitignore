@@ -1,5 +1,6 @@
-# Simulation settings
+# Simulation related
 settings.py
+cache/
 
 # Environment
 .venv/

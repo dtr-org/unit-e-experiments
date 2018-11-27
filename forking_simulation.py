@@ -16,12 +16,6 @@ The variables that are being considered are:
 The outcomes that we want to observe are:
   - Number of chain forks' distribution across nodes (and maybe consider their depths too)
   - Number of orphan blocks' distribution across nodes
-
-TODO: Add proper logging
-
-TODO: Should we consider node centrality measures and see how they affect the outcomes?
-TODO: Should we consider latencies (& bandwidths) distribution instead of one shared latency & bandwidth?
-TODO: Should we relate latencies with nodes centrality?
 """
 
 
@@ -39,7 +33,8 @@ except ModuleNotFoundError:
 from asyncio import (
     AbstractEventLoop,
     coroutine,
-    sleep as asyncio_sleep
+    sleep as asyncio_sleep,
+    get_event_loop,
 )
 from os.path import (
     dirname,
@@ -49,6 +44,7 @@ from os.path import (
 from random import sample
 from shutil import rmtree
 from tempfile import mkdtemp
+from time import time
 
 import test_framework.util as tf_util
 
@@ -67,7 +63,8 @@ class ForkingSimulation:
     def __init__(
             self, *,
             loop: AbstractEventLoop, latency: float, bandwidth: float, num_proposer_nodes: int, num_relay_nodes: int,
-            simulation_time: float = 600, sample_time: float = 1, graph_model: str = 'preferential_attachment'
+            simulation_time: float = 600, sample_time: float = 1, graph_model: str = 'preferential_attachment',
+            results_file_name: str = 'fork_simulation_results.csv'
     ):
         if num_proposer_nodes < 0 or num_relay_nodes < 0:
             raise RuntimeError('Number of nodes must be positive')
@@ -78,7 +75,7 @@ class ForkingSimulation:
 
         self.loop = loop
 
-        self.latency = latency  # For now just a shared latency parameter
+        self.latency = latency  # For now just a shared latency parameter.
         self.bandwidth = bandwidth  # Not used yet, here to outline the fact that we have to consider its effects
 
         self.num_proposer_nodes = num_proposer_nodes
@@ -95,9 +92,13 @@ class ForkingSimulation:
         self.simulation_time = simulation_time  # For how long the simulation will run
         self.sample_time = sample_time  # Time that passes between each sample
 
-        self.mocktime = 0
+        self.start_time = 0
+
         self.cache_dir = normpath(dirname(realpath(__file__)) + '/cache')
         self.tmp_dir = ''
+
+        self.results_file = None
+        self.results_file_name = results_file_name
 
         self.define_network_topology()
 
@@ -112,13 +113,24 @@ class ForkingSimulation:
         self.nodes_hub.sync_start_proxies()
         self.nodes_hub.sync_connect_nodes(self.graph_edges)
 
-        # Loading wallets... only for proposers
+        # Setting deterministic delays (for now), would be better to use random delays following exponential dist.
+        for i in range(self.num_nodes):
+            for j in range(self.num_nodes):
+                self.nodes_hub.set_nodes_delay(i, j, self.latency)
+
+        # Loading wallets... only for proposers (which are picked randomly)
         self.proposer_node_ids = sample(range(self.num_nodes), self.num_proposer_nodes)
         for idx, proposer_id in enumerate(self.proposer_node_ids):
             self.nodes[proposer_id].importmasterkey(regtest_mnemonics[idx]['mnemonics'])
 
-        self.loop.create_task(self.sample_forever())  # TODO: This task should be cancelled when the simulation ends
+        # Opening results file
+        self.results_file = open(file=self.results_file_name, mode='wb')
+
+        self.start_time = time()
+        self.loop.create_task(self.sample_forever())
         self.loop.run_until_complete(asyncio_sleep(self.simulation_time))
+
+        self.results_file.close()
 
     @coroutine
     def sample_forever(self):
@@ -128,7 +140,29 @@ class ForkingSimulation:
 
     @coroutine
     def sample(self):
-        pass  # TODO: Register information and dump it to a CSV file
+        sample_time = time()
+        time_delta = sample_time - self.start_time
+
+        for node_id, node in enumerate(self.nodes):
+            node_tips = node.getchaintips()
+
+            num_active_tips = len([tip for tip in node_tips if tip['status'] == 'active'])
+            num_valid_fork_tips = len([tip for tip in node_tips if tip['status'] == 'valid-fork'])
+            num_valid_headers_tips = len([tip for tip in node_tips if tip['status'] == 'valid-headers'])
+            num_headers_only_tips = len([tip for tip in node_tips if tip['status'] == 'headers-only'])
+
+            sample_line = map(str, [
+                time_delta,
+                self.latency,  # Although it's redundant, it allows us to keep one single & consistent CSV file
+                self.bandwidth,
+                node_id,
+                num_active_tips,
+                num_valid_fork_tips,
+                num_valid_headers_tips,
+                num_headers_only_tips,
+                # TODO: Add node centrality measures
+            ])
+            self.results_file.write((', '.join(sample_line) + '\n').encode())
 
     def safe_run(self):
         try:
@@ -153,7 +187,7 @@ class ForkingSimulation:
         self.nodes = [
             TestNode(
                 i=i, dirname=self.tmp_dir, extra_args=[], rpchost=None, timewait=None, binary=None, stderr=None,
-                mocktime=self.mocktime, coverage_dir=None, use_cli=False
+                mocktime=0, coverage_dir=None, use_cli=False
             )
             for i in range(self.num_nodes)
         ]
@@ -211,8 +245,20 @@ class ForkingSimulation:
 
 def main():
     tf_util.MAX_NODES = 200  # We need more flexibility for our simulations
-    # TODO: Load settings from cmd options and/or settings file and pass them to run_experiment
-    pass
+
+    # TODO: Load simulation settings from settings.py
+    simulation = ForkingSimulation(
+        loop=get_event_loop(),
+        latency=0,
+        bandwidth=float('INF'),
+        num_proposer_nodes=20,
+        num_relay_nodes=180,
+        simulation_time=120,
+        sample_time=1,
+        graph_model='preferential_attachment',
+        results_file_name='fork_simulation_results.csv'
+    )
+    simulation.run()
 
 
 if __name__ == '__main__':
