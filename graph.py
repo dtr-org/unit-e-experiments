@@ -22,35 +22,49 @@ def create_directed_graph(
         model='static',
 ):
     """
-    This function returns a set of directed edges between numbered nodes representing a directed graph. The graph
-    generation models rely on the following assumptions:
+    This function returns a set of directed edges between numbered nodes
+    representing a directed graph. The graph generation models rely on the
+    following assumptions:
       - There's no distinction between node types
       - The number of nodes is fixed
-      - The number of outbound connections per each node is fixed (not the same for ingoing connections)
+      - The number of outbound connections per each node is fixed (not the same
+        for ingoing connections)
       - There's a maximum number of ingoing connections that a node can accept
 
-    We can specify which model do we want to use with the `model` parameter, that accepts the following values:
+    We can specify which model do we want to use with the `model` parameter,
+    that accepts the following values:
       - 'static':
-          All connections are specified at the same time. It's one of the simplest models, but far from being realistic.
+          All connections are specified at the same time. It's one of the
+          simplest models, but far from being realistic.
       - 'growing':
-          This model assumes a growing graph, creating connections as the nodes join the network. Given that the number
-          of outbound connections is fixed, it has to start with a "seed" graph, with a number of nodes equal or greater
-          to num_nodes + 1, if graph_seed_size is None, the starting size will be automatically picked. This model
-          exhibits higher ingoing degree for the older nodes, in opposition of what happens with the static model. The
-          rational for picking this model is that new nodes can only connect to nodes that were already there.
+          This model assumes a growing graph, creating connections as the nodes
+          join the network. Given that the number of outbound connections is
+          fixed, it has to start with a "seed" graph, with a number of nodes
+          equal or greater to num_nodes + 1, if graph_seed_size is None, the
+          starting size will be automatically picked. This model exhibits higher
+          ingoing degree for the older nodes, in opposition of what happens with
+          the static model. The rational for picking this model is that new
+          nodes can only connect to nodes that were already there.
       - 'preferential_attachment':
-          This model is similar to the 'growing' model, but with a small modification that enforces a correlation
-          between the node's degree and the probability of receiving new ingoing connections. The rational for picking
-          this model is that better connected nodes will be advertised more times by their peers when a new node asks
-          for node listings.
+          This model is similar to the 'growing' model, but with a small
+          modification that enforces a correlation between the node's degree and
+          the probability of receiving new ingoing connections. The rational for
+          picking this model is that better connected nodes will be advertised
+          more times by their peers when a new node asks for node listings.
     """
     if 'static' == model:
-        return create_static_graph(num_nodes, num_outbound_connections, max_inbound_connections)
+        return create_static_graph(
+            num_nodes, num_outbound_connections, max_inbound_connections
+        )
     elif 'growing' == model:
-        return create_growing_graph(num_nodes, num_outbound_connections, max_inbound_connections, graph_seed_size)
+        return create_growing_graph(
+            num_nodes, num_outbound_connections, max_inbound_connections,
+            graph_seed_size
+        )
     elif 'preferential_attachment' == model:
         return create_preferential_attachment_graph(
-            num_nodes, num_outbound_connections, max_inbound_connections, graph_seed_size
+            num_nodes, num_outbound_connections, max_inbound_connections,
+            graph_seed_size
         )
 
 
@@ -60,7 +74,9 @@ def create_static_graph(
         max_ingoing_connections=125,
 ) -> (set, dict):
     if max_ingoing_connections < num_outbound_connections:
-        raise RuntimeError('max_inbound_connections must be greater than or equal to num_outbound_connections')
+        raise RuntimeError(
+            'max_inbound_connections must be greater than or equal to num_outbound_connections'
+        )
 
     graph_edges = set()
     inbound_degrees = defaultdict(int)
@@ -90,7 +106,9 @@ def create_growing_graph(
     if graph_seed_size is None:
         graph_seed_size = min(num_nodes, num_outbound_connections + 1)
     elif graph_seed_size > num_nodes:
-        raise RuntimeError('graph_seed_size has to be lower or equal to num_nodes')
+        raise RuntimeError(
+            'graph_seed_size has to be lower or equal to num_nodes'
+        )
 
     graph_edges, inbound_degrees = create_static_graph(
         graph_seed_size, num_outbound_connections, max_inbound_connections
@@ -124,7 +142,9 @@ def create_preferential_attachment_graph(
     if graph_seed_size is None:
         graph_seed_size = min(num_nodes, num_outbound_connections + 1)
     elif graph_seed_size > num_nodes:
-        raise RuntimeError('graph_seed_size has to be lower or equal to num_nodes')
+        raise RuntimeError(
+            'graph_seed_size has to be lower or equal to num_nodes'
+        )
 
     directed_edges, inbound_degrees = create_static_graph(
         graph_seed_size, num_outbound_connections, max_inbound_connections
@@ -161,12 +181,17 @@ def create_preferential_attachment_graph(
 
 
 def enforce_nodes_reconnections(
-        graph_edges: set, inbound_degrees: dict, num_reconnection_rounds=1, num_outbound_connections=8
+        graph_edges: set,
+        inbound_degrees: dict,
+        num_reconnection_rounds=1,
+        num_outbound_connections=8
 ) -> (set, dict):
     """
-    This function tries to 'shuffle' the graph by simulating nodes re-connections, this is useful to decrease the
-    probability of having "sink nodes" or "sink sub-graphs" (where information arrives, but does not flow to the rest of
-    the graph), a clear side effect of using the preferential attachment model on a directed graph.
+    This function tries to 'shuffle' the graph by simulating nodes
+    re-connections, this is useful to decrease the probability of having "sink
+    nodes" or "sink sub-graphs" (where information arrives, but does not flow to
+    the rest of the graph), a clear side effect of using the preferential
+    attachment model on a directed graph.
     """
     graph_edges = graph_edges.copy()
     inbound_degrees = inbound_degrees.copy()
@@ -202,9 +227,15 @@ def enforce_nodes_reconnections(
 
             # Reconnecting inbound neighbours
             for old_neighbour in inbound_neighbours:
-                e = (old_neighbour, sample(neighbours_neighbours[old_neighbour], 1)[0])
+                e = (
+                    old_neighbour,
+                    sample(neighbours_neighbours[old_neighbour], 1)[0]
+                )
                 while e in graph_edges:
-                    e = (old_neighbour, sample(neighbours_neighbours[old_neighbour], 1)[0])
+                    e = (
+                        old_neighbour,
+                        sample(neighbours_neighbours[old_neighbour], 1)[0]
+                    )
                 graph_edges.add(e)
                 inbound_degrees[e[1]] += 1
 
@@ -225,10 +256,16 @@ def get_node_neighbours(node_id: int, graph_edges: set, degree=1):
     return neighbours.difference({node_id})
 
 
-def compute_degrees(graph_edges: set, num_nodes: int, processed_edges=None, degrees: list = ()) -> (list, set):
+def compute_degrees(
+        graph_edges: set,
+        num_nodes: int,
+        processed_edges=None,
+        degrees: list = ()
+) -> (list, set):
     """
-    Computes the node degrees without making distinctions between inbound & outbound connections. It returns the list
-    of processed edges as well in order to allow incremental processing.
+    Computes the node degrees without making distinctions between inbound &
+    outbound connections. It returns the list of processed edges as well in
+    order to allow incremental processing.
     """
 
     if processed_edges is None:
@@ -251,35 +288,45 @@ def compute_degrees(graph_edges: set, num_nodes: int, processed_edges=None, degr
 
 
 def degrees_distribution(degrees: list) -> list:
-    """Given an ordered list of degrees, it returns a distribution suitable for weighed random selections"""
+    """
+    Given an ordered list of degrees, it returns a distribution suitable for
+    weighed random selections
+    """
 
     return reduce(lambda dd, d: dd + [dd[-1] + d], degrees, [0])[1:]
 
 
 def weighted_random_int(degrees_dist: list) -> int:
-    """Returns a random integer between 0 and L, being L the length of an accumulated integer weights list"""
+    """
+    Returns a random integer between 0 and L, being L the length of an
+    accumulated integer weights list
+    """
 
     uniform_rnd = randint(1, degrees_dist[-1])
     for idx, accumulated_weight in enumerate(degrees_dist):
         if uniform_rnd <= accumulated_weight:
             return idx
-    raise ValueError('The provided degrees_dist input does not conform to the expected structure')
+    raise ValueError(
+        'The provided degrees_dist input does not conform to the expected structure'
+    )
 
 
 def ensure_one_inbound_connection_per_node(
         num_nodes: int, graph_edges: set, inbound_degrees: defaultdict
 ) -> (set, dict):
     """
-    This function tries to enforce that each node has at least 1 inbound connection by performing a small amount of
-    changes without altering most of the network's properties.
+    This function tries to enforce that each node has at least 1 inbound
+    connection by performing a small amount of changes without altering most of
+    the network's properties.
     """
 
-    # It's better to avoid side effects, since here performance is not very important
     graph_edges = graph_edges.copy()
     inbound_degrees = inbound_degrees.copy()
 
     lonely_nodes = [i for i in range(num_nodes) if inbound_degrees[i] == 0]
-    nodes_by_popularity = sorted(inbound_degrees.items(), key=lambda x: x[1], reverse=True)
+    nodes_by_popularity = sorted(
+        inbound_degrees.items(), key=lambda x: x[1], reverse=True
+    )
 
     for lonely_node in lonely_nodes:
         popular_node, popularity = nodes_by_popularity[0]
@@ -291,6 +338,8 @@ def ensure_one_inbound_connection_per_node(
 
         inbound_degrees[popular_node] -= 1
         inbound_degrees[lonely_node] += 1
-        nodes_by_popularity = sorted(inbound_degrees.items(), key=lambda x: x[1], reverse=True)
+        nodes_by_popularity = sorted(
+            inbound_degrees.items(), key=lambda x: x[1], reverse=True
+        )
 
     return graph_edges, inbound_degrees
