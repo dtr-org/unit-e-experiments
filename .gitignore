@@ -1,6 +1,9 @@
 # Simulation related
 settings.py
 cache/
+*.csv
+*.dat
+wallet.dat*
 
 # Environment
 .venv/
