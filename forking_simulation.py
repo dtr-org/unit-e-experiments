@@ -39,6 +39,11 @@ from asyncio import (
     sleep as asyncio_sleep,
     get_event_loop,
 )
+from logging import (
+    INFO,
+    basicConfig as logging_config,
+    getLogger
+)
 from os import environ
 from os.path import (
     dirname,
@@ -77,6 +82,7 @@ class ForkingSimulation:
         elif num_proposer_nodes > 100:
             raise RuntimeError('For now we only have 100 wallets with funds')
 
+        self.logger = getLogger('ForkingSimulation')
         self.loop = loop
 
         self.latency = latency  # For now just a shared latency parameter.
@@ -107,6 +113,7 @@ class ForkingSimulation:
         self.define_network_topology()
 
     def run(self):
+        self.logger.info('Starting simulation')
         self.setup_directories()
 
         self.setup_chain()
@@ -138,6 +145,7 @@ class ForkingSimulation:
 
     @coroutine
     def sample_forever(self):
+        self.logger.info('Starting sampling process')
         while True:
             yield from asyncio_sleep(self.sample_time)
             yield from self.sample()
@@ -177,17 +185,21 @@ class ForkingSimulation:
             self.loop.close()
 
     def setup_directories(self):
+        self.logger.info('Preparing temporary directories')
         self.tmp_dir = mkdtemp(prefix='simulation')
 
     def cleanup_directories(self):
+        self.logger.info('Cleaning temporary directories')
         if self.tmp_dir != '':
             rmtree(self.tmp_dir)
 
     def setup_chain(self):
+        self.logger.info('Preparing "empty" chain')
         for i in range(self.num_nodes):
             initialize_datadir(self.tmp_dir, i)
 
     def setup_nodes(self):
+        self.logger.info('Creating node wrappers')
         self.nodes = [
             TestNode(
                 i=i, dirname=self.tmp_dir, extra_args=[], rpchost=None, timewait=None, binary=None, stderr=None,
@@ -206,6 +218,7 @@ class ForkingSimulation:
             raise
 
     def start_nodes(self):
+        self.logger.info('Starting nodes')
         try:
             for node in self.nodes:
                 node.start()
@@ -216,6 +229,7 @@ class ForkingSimulation:
             raise
 
     def stop_nodes(self):
+        self.logger.info('Stopping nodes')
         for node in self.nodes:
             node.stop_node()
         for node in self.nodes:
@@ -223,6 +237,8 @@ class ForkingSimulation:
 
     def define_network_topology(self):
         """This function just defines the network's topology"""
+
+        self.logger.info('Defining network graph')
 
         graph_edges, inbound_degrees = create_directed_graph(
             num_nodes=self.num_nodes,
@@ -248,6 +264,8 @@ class ForkingSimulation:
 
 
 def main():
+    logging_config(stream=sys.stdout, level=INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
     tf_util.MAX_NODES = 500  # has to be greater than 2n+2 where n = num_nodes
     tf_util.PortSeed.n = 314159
     environ['UNITED'] = united_binary_path
