@@ -5,16 +5,19 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 """
-This simulation script has been created to see how some settings/variables could affect the chain forks distribution.
-The variables that are being considered are:
+This simulation script has been created to see how some settings/variables could
+affect the chain forks distribution. The variables that are being considered
+are:
   - Latency
   - Bandwidth
   - Expected time between block creation
-  - Number of proposer & relay nodes (not the numbers but their relative proportions)
+  - Number of proposer & relay nodes (not the numbers but their relative
+    proportions)
   - Network Topology? (different graph generators, different parameters)
 
 The outcomes that we want to observe are:
-  - Number of chain forks' distribution across nodes (and maybe consider their depths too)
+  - Number of chain forks' distribution across nodes (and maybe consider their
+    depths too)
   - Number of orphan blocks' distribution across nodes
 """
 
@@ -71,8 +74,14 @@ from test_framework.util import initialize_datadir
 class ForkingSimulation:
     def __init__(
             self, *,
-            loop: AbstractEventLoop, latency: float, bandwidth: float, num_proposer_nodes: int, num_relay_nodes: int,
-            simulation_time: float = 600, sample_time: float = 1, graph_model: str = 'preferential_attachment',
+            loop: AbstractEventLoop,
+            latency: float,
+            bandwidth: float,
+            num_proposer_nodes: int,
+            num_relay_nodes: int,
+            simulation_time: float = 600,
+            sample_time: float = 1,
+            graph_model: str = 'preferential_attachment',
             results_file_name: str = 'fork_simulation_results.csv'
     ):
         if num_proposer_nodes < 0 or num_relay_nodes < 0:
@@ -86,7 +95,7 @@ class ForkingSimulation:
         self.loop = loop
 
         self.latency = latency  # For now just a shared latency parameter.
-        self.bandwidth = bandwidth  # Not used yet, here to outline the fact that we have to consider its effects
+        self.bandwidth = bandwidth  # Not used (yet)
 
         self.num_proposer_nodes = num_proposer_nodes
         self.num_relay_nodes = num_relay_nodes
@@ -99,8 +108,8 @@ class ForkingSimulation:
         self.nodes_hub = None
         self.proposer_node_ids = []
 
-        self.simulation_time = simulation_time  # For how long the simulation will run
-        self.sample_time = sample_time  # Time that passes between each sample
+        self.simulation_time = simulation_time
+        self.sample_time = sample_time
 
         self.start_time = 0
 
@@ -120,19 +129,26 @@ class ForkingSimulation:
         self.setup_nodes()
         self.start_nodes()
 
-        self.nodes_hub = NodesHub(loop=self.loop, nodes=self.nodes, sync_setup=True)
+        self.nodes_hub = NodesHub(
+            loop=self.loop, nodes=self.nodes, sync_setup=True
+        )
         self.nodes_hub.sync_start_proxies()
         self.nodes_hub.sync_connect_nodes(self.graph_edges)
 
-        # Setting deterministic delays (for now), would be better to use random delays following exponential dist.
+        # Setting deterministic delays (for now), would be better to use random
+        # delays following exponential dist.
         for i in range(self.num_nodes):
             for j in range(self.num_nodes):
                 self.nodes_hub.set_nodes_delay(i, j, self.latency)
 
         # Loading wallets... only for proposers (which are picked randomly)
-        self.proposer_node_ids = sample(range(self.num_nodes), self.num_proposer_nodes)
+        self.proposer_node_ids = sample(
+            range(self.num_nodes), self.num_proposer_nodes
+        )
         for idx, proposer_id in enumerate(self.proposer_node_ids):
-            self.nodes[proposer_id].importmasterkey(regtest_mnemonics[idx]['mnemonics'])
+            self.nodes[proposer_id].importmasterkey(
+                regtest_mnemonics[idx]['mnemonics']
+            )
 
         # Opening results file
         self.results_file = open(file=self.results_file_name, mode='wb')
@@ -158,14 +174,25 @@ class ForkingSimulation:
         for node_id, node in enumerate(self.nodes):
             node_tips = node.getchaintips()
 
-            num_active_tips = len([tip for tip in node_tips if tip['status'] == 'active'])
-            num_valid_fork_tips = len([tip for tip in node_tips if tip['status'] == 'valid-fork'])
-            num_valid_headers_tips = len([tip for tip in node_tips if tip['status'] == 'valid-headers'])
-            num_headers_only_tips = len([tip for tip in node_tips if tip['status'] == 'headers-only'])
+            num_active_tips = len(
+                [tip for tip in node_tips if tip['status'] == 'active']
+            )
+            num_valid_fork_tips = len(
+                [tip for tip in node_tips if tip['status'] == 'valid-fork']
+            )
+            num_valid_headers_tips = len(
+                [tip for tip in node_tips if tip['status'] == 'valid-headers']
+            )
+            num_headers_only_tips = len(
+                [tip for tip in node_tips if tip['status'] == 'headers-only']
+            )
 
+            # There's redundant data because it allows us to keep all the data
+            # in one single file, without having to perform "join" operations of
+            # any type.
             sample_line = map(str, [
                 time_delta,
-                self.latency,  # Although it's redundant, it allows us to keep one single & consistent CSV file
+                self.latency,
                 self.bandwidth,
                 node_id,
                 num_active_tips,
@@ -202,8 +229,9 @@ class ForkingSimulation:
         self.logger.info('Creating node wrappers')
         self.nodes = [
             TestNode(
-                i=i, dirname=self.tmp_dir, extra_args=[], rpchost=None, timewait=None, binary=None, stderr=None,
-                mocktime=0, coverage_dir=None, use_cli=False
+                i=i, dirname=self.tmp_dir, extra_args=[], rpchost=None,
+                timewait=None, binary=None, stderr=None, mocktime=0,
+                coverage_dir=None, use_cli=False
             )
             for i in range(self.num_nodes)
         ]
@@ -264,7 +292,11 @@ class ForkingSimulation:
 
 
 def main():
-    logging_config(stream=sys.stdout, level=INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logging_config(
+        stream=sys.stdout,
+        level=INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
 
     tf_util.MAX_NODES = 500  # has to be greater than 2n+2 where n = num_nodes
     tf_util.PortSeed.n = 314159
