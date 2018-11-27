@@ -9,5 +9,6 @@ Tools to simulate Unit-E networks
 
 ## Setup / Configuration
 
-In order to run the simulations, you must add to the `PYTHONPATH` environment
-variable the path of the Unit-E Python functional tests.
+In order to run the simulations, you must copy the file `settings.py.example` as
+`settings.py` and adapt the listed paths to make possible finding some Python
+packages available in the Unit-E repository.

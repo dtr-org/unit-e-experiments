@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright (c) 2018 The unit-e core developers
+# Copyright (c) 2018 The Unit-e developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -23,6 +23,17 @@ TODO: Should we consider node centrality measures and see how they affect the ou
 TODO: Should we consider latencies (& bandwidths) distribution instead of one shared latency & bandwidth?
 TODO: Should we relate latencies with nodes centrality?
 """
+
+
+import sys
+
+try:
+    from settings import extra_import_paths
+    for extra_path in extra_import_paths:
+        sys.path.append(extra_path)
+except ModuleNotFoundError:
+    print('Missing import paths for Unit-E functional test packages')
+    print('Copy "settings.py.example" to "settings.py" and adapt the paths')
 
 
 from asyncio import (
