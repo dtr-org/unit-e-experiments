@@ -46,16 +46,19 @@ from os.path import (
     normpath,
     realpath
 )
+from random import sample
 from shutil import rmtree
 from tempfile import mkdtemp
 
 import test_framework.util as tf_util
 
 from graph import (
+    enforce_nodes_reconnections,
     ensure_one_inbound_connection_per_node,
     create_directed_graph,
 )
 from test_framework.nodes_hub import NodesHub
+from test_framework.regtest_mnemonics import regtest_mnemonics
 from test_framework.test_node import TestNode
 from test_framework.util import initialize_datadir
 
@@ -70,8 +73,8 @@ class ForkingSimulation:
             raise RuntimeError('Number of nodes must be positive')
         elif num_relay_nodes + num_proposer_nodes == 0:
             raise RuntimeError('Total number of nodes must be greater than 0')
-        elif num_proposer_nodes > 4:
-            raise RuntimeError('For now we only have 4 wallets with funds')
+        elif num_proposer_nodes > 100:
+            raise RuntimeError('For now we only have 100 wallets with funds')
 
         self.loop = loop
 
@@ -87,6 +90,7 @@ class ForkingSimulation:
         self.nodes = []
         self.graph_edges = set()
         self.nodes_hub = None
+        self.proposer_node_ids = []
 
         self.simulation_time = simulation_time  # For how long the simulation will run
         self.sample_time = sample_time  # Time that passes between each sample
@@ -107,9 +111,11 @@ class ForkingSimulation:
         self.nodes_hub = NodesHub(loop=self.loop, nodes=self.nodes, sync_setup=True)
         self.nodes_hub.sync_start_proxies()
         self.nodes_hub.sync_connect_nodes(self.graph_edges)
-        # self.loop.run_until_complete(coroutine(self.sync_all)())  # TODO: Something like this
 
-        # TODO: Configure wallets
+        # Loading wallets... only for proposers
+        self.proposer_node_ids = sample(range(self.num_nodes), self.num_proposer_nodes)
+        for idx, proposer_id in enumerate(self.proposer_node_ids):
+            self.nodes[proposer_id].importmasterkey(regtest_mnemonics[idx]['mnemonics'])
 
         self.loop.create_task(self.sample_forever())  # TODO: This task should be cancelled when the simulation ends
         self.loop.run_until_complete(asyncio_sleep(self.simulation_time))
@@ -186,6 +192,16 @@ class ForkingSimulation:
             max_inbound_connections=125,
             model=self.graph_model
         )
+
+        # We try to avoid having sink sub-graphs
+        graph_edges, inbound_degrees = enforce_nodes_reconnections(
+            graph_edges=graph_edges,
+            inbound_degrees=inbound_degrees,
+            num_reconnection_rounds=1,
+            num_outbound_connections=8
+        )
+
+        # This fix the rare case where some nodes don't have inbound connections
         self.graph_edges, _ = ensure_one_inbound_connection_per_node(
             num_nodes=self.num_nodes,
             graph_edges=graph_edges,
