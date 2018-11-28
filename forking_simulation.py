@@ -42,6 +42,7 @@ from asyncio import (
     sleep as asyncio_sleep,
     get_event_loop,
 )
+from collections import defaultdict
 from logging import (
     INFO,
     basicConfig as logging_config,
@@ -172,20 +173,9 @@ class ForkingSimulation:
         time_delta = sample_time - self.start_time
 
         for node_id, node in enumerate(self.nodes):
-            node_tips = node.getchaintips()
-
-            num_active_tips = len(
-                [tip for tip in node_tips if tip['status'] == 'active']
-            )
-            num_valid_fork_tips = len(
-                [tip for tip in node_tips if tip['status'] == 'valid-fork']
-            )
-            num_valid_headers_tips = len(
-                [tip for tip in node_tips if tip['status'] == 'valid-headers']
-            )
-            num_headers_only_tips = len(
-                [tip for tip in node_tips if tip['status'] == 'headers-only']
-            )
+            tip_stats = defaultdict(int)
+            for tip in node.getchaintips():
+                tip_stats[tip['status']] += 1
 
             # There's redundant data because it allows us to keep all the data
             # in one single file, without having to perform "join" operations of
@@ -195,10 +185,10 @@ class ForkingSimulation:
                 self.latency,
                 self.bandwidth,
                 node_id,
-                num_active_tips,
-                num_valid_fork_tips,
-                num_valid_headers_tips,
-                num_headers_only_tips,
+                tip_stats['active'],
+                tip_stats['valid-fork'],
+                tip_stats['valid-headers'],
+                tip_stats['headers-only'],
                 # TODO: Add node centrality measures
             ])
             self.results_file.write((', '.join(sample_line) + '\n').encode())
@@ -264,7 +254,7 @@ class ForkingSimulation:
             node.wait_until_stopped()
 
     def define_network_topology(self):
-        """This function just defines the network's topology"""
+        """This function defines the network's topology"""
 
         self.logger.info('Defining network graph')
 
