@@ -61,12 +61,12 @@ from time import time
 
 import test_framework.util as tf_util
 
-from graph import (
+from utils.graph import (
     enforce_nodes_reconnections,
     ensure_one_inbound_connection_per_node,
     create_directed_graph,
 )
-from test_framework.nodes_hub import NodesHub
+from utils.nodes_hub import NodesHub
 from test_framework.regtest_mnemonics import regtest_mnemonics
 from test_framework.test_node import TestNode
 from test_framework.util import initialize_datadir
