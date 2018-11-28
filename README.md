@@ -5,7 +5,7 @@ Tools to simulate Unit-e networks
 
 ## Requisites
 
-  * Python 3.4 (but recommended Python >=3.6)
+  * Python 3.6
   * Pipenv ( https://pipenv.readthedocs.io/en/latest/ )
 
 ## Setup / Configuration
