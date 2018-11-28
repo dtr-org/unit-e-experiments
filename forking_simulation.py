@@ -231,7 +231,7 @@ class ForkingSimulation:
         try:
             node.start()
             node.wait_for_rpc_connection()
-        except:
+        except Exception:
             self.stop_nodes()
             raise
 
@@ -242,7 +242,7 @@ class ForkingSimulation:
                 node.start()
             for node in self.nodes:
                 node.wait_for_rpc_connection()
-        except:
+        except Exception:
             self.stop_nodes()
             raise
 

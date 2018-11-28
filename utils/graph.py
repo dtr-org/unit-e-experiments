@@ -83,7 +83,7 @@ def create_static_graph(
 
     for src_id in range(num_nodes):
         for _ in range(num_outbound_connections):
-            dst_id = randint(0, num_nodes-1)
+            dst_id = randint(0, num_nodes - 1)
             while (
                     dst_id == src_id or
                     (src_id, dst_id) in graph_edges or
@@ -118,7 +118,7 @@ def create_growing_graph(
 
     for src_id in range(graph_seed_size, num_nodes):
         for _ in range(num_outbound_connections):
-            dst_id = randint(0, graph_size-1)
+            dst_id = randint(0, graph_size - 1)
             while (
                     (src_id, dst_id) in graph_edges or
                     inbound_degrees[dst_id] >= max_inbound_connections

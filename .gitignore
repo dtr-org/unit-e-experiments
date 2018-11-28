@@ -1,4 +1,5 @@
 # Simulation related
+Pipfile.lock
 settings.py
 cache/
 *.csv
