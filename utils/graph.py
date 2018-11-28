@@ -13,11 +13,12 @@ from random import (
     shuffle
 )
 from typing import (
+    DefaultDict,
     Dict,
     List,
     Optional,
     Set,
-    Tuple
+    Tuple,
 )
 
 
@@ -74,6 +75,8 @@ def create_directed_graph(
             graph_seed_size
         )
 
+    raise ValueError('Not supported graph model')
+
 
 def create_static_graph(
         num_nodes: int = 11,
@@ -85,8 +88,8 @@ def create_static_graph(
             'max_inbound_connections must be greater than or equal to num_outbound_connections'
         )
 
-    graph_edges = set()
-    inbound_degrees = defaultdict(int)
+    graph_edges: Set[Tuple[int, int]] = set()
+    inbound_degrees: DefaultDict[int, int] = defaultdict(int)
 
     for src_id in range(num_nodes):
         for _ in range(num_outbound_connections):
@@ -271,7 +274,7 @@ def compute_degrees(
         graph_edges: Set[Tuple[int, int]],
         num_nodes: int,
         processed_edges: Optional[Set[Tuple[int, int]]] = None,
-        degrees: List[int] = ()
+        degrees: Optional[List[int]] = None
 ) -> Tuple[List[int], Set[Tuple[int, int]]]:
     """
     Computes the node degrees without making distinctions between inbound &
@@ -282,8 +285,10 @@ def compute_degrees(
     if processed_edges is None:
         processed_edges = set()
 
+    if degrees is None:
+        degrees = []
     if len(degrees) < num_nodes:
-        degrees = list(degrees) + [0] * (num_nodes - len(degrees))
+        degrees = degrees + [0] * (num_nodes - len(degrees))
 
     for edge in graph_edges:
         normalized_edge = (max(edge), min(edge))

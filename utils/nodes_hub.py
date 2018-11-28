@@ -16,8 +16,16 @@ from asyncio import (
 )
 from logging import getLogger
 from struct import pack, unpack
+from typing import (
+    Coroutine,
+    Dict,
+    List,
+    Optional,
+    Tuple
+)
 
 from test_framework.messages import hash256
+from test_framework.test_node import TestNode
 from test_framework.util import p2p_port
 
 
@@ -48,26 +56,27 @@ class NodesHub:
     def __init__(
             self,
             loop: AbstractEventLoop,
-            nodes: list,
-            host='127.0.0.1',
-            sync_setup=False
+            nodes: List[TestNode],
+            host: str = '127.0.0.1',
+            sync_setup: bool = False
     ):
         self.loop = loop
         self.nodes = nodes
 
         self.host = host
 
-        self.node2node_delays = {}  # This allows us to specify asymmetric delays
+        # This allows us to specify asymmetric delays
+        self.node2node_delays: Dict[Tuple[int, int], float] = {}
 
-        self.proxy_coroutines = []
-        self.proxy_tasks = []
-        self.sender2proxy_transports = {}
+        self.proxy_coroutines: List[Coroutine] = []
+        self.proxy_tasks: List[Task] = []
+        self.sender2proxy_transports: Dict[Tuple[int, int], Transport] = {}
 
-        self.relay_tasks = {}
-        self.proxy2receiver_transports = {}
+        self.relay_tasks: Dict[Tuple[int, int], Task] = {}
+        self.proxy2receiver_transports: Dict[Tuple[int, int], Transport] = {}
 
         # Lock-like object used by NodesHub.connect_nodes
-        self.pending_connection = None
+        self.pending_connection: Optional[Tuple[int, int]] = None
 
         self.setup_proxies(sync_setup)
 
@@ -251,7 +260,7 @@ class NodeProxy(Protocol):
         self.sender2receiver_pair = None
         self.recvbuf = b''
 
-    def connection_made(self, transport: Transport):
+    def connection_made(self, transport):
         self.sender2receiver_pair = self.hub_ref.pending_connection
 
         logger.debug(
@@ -300,7 +309,7 @@ class ProxyRelay(Protocol):
         self.receiver2sender_pair = sender2receiver_pair[::-1]
         self.recvbuf = b''
 
-    def connection_made(self, transport: Transport):
+    def connection_made(self, transport):
         logger.debug(
             'Created connection between proxy and its associated node %s to receive messages from node %s' %
             self.receiver2sender_pair
