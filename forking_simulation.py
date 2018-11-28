@@ -43,6 +43,7 @@ from asyncio import (
     get_event_loop,
 )
 from collections import defaultdict
+from io import BytesIO
 from logging import (
     INFO,
     basicConfig as logging_config,
@@ -58,6 +59,12 @@ from random import sample
 from shutil import rmtree
 from tempfile import mkdtemp
 from time import time
+from typing import (
+    List,
+    Optional,
+    Set,
+    Tuple
+)
 
 import test_framework.util as tf_util
 
@@ -77,7 +84,6 @@ class ForkingSimulation:
             self, *,
             loop: AbstractEventLoop,
             latency: float,
-            bandwidth: float,
             num_proposer_nodes: int,
             num_relay_nodes: int,
             simulation_time: float = 600,
@@ -96,7 +102,6 @@ class ForkingSimulation:
         self.loop = loop
 
         self.latency = latency  # For now just a shared latency parameter.
-        self.bandwidth = bandwidth  # Not used (yet)
 
         self.num_proposer_nodes = num_proposer_nodes
         self.num_relay_nodes = num_relay_nodes
@@ -104,10 +109,10 @@ class ForkingSimulation:
 
         self.graph_model = graph_model
 
-        self.nodes = []
-        self.graph_edges = set()
-        self.nodes_hub = None
-        self.proposer_node_ids = []
+        self.nodes: List[TestNode] = []
+        self.graph_edges: Set[Tuple[int, int]] = set()
+        self.nodes_hub: Optional[NodesHub] = None
+        self.proposer_node_ids: List[int] = []
 
         self.simulation_time = simulation_time
         self.sample_time = sample_time
@@ -117,7 +122,7 @@ class ForkingSimulation:
         self.cache_dir = normpath(dirname(realpath(__file__)) + '/cache')
         self.tmp_dir = ''
 
-        self.results_file = None
+        self.results_file: Optional[BytesIO] = None
         self.results_file_name = results_file_name
 
         self.define_network_topology()
@@ -183,7 +188,6 @@ class ForkingSimulation:
             sample_line = map(str, [
                 time_delta,
                 self.latency,
-                self.bandwidth,
                 node_id,
                 tip_stats['active'],
                 tip_stats['valid-fork'],
@@ -226,7 +230,7 @@ class ForkingSimulation:
             for i in range(self.num_nodes)
         ]
 
-    def start_node(self, i):
+    def start_node(self, i: int):
         node = self.nodes[i]
         try:
             node.start()
@@ -296,7 +300,6 @@ def main():
     simulation = ForkingSimulation(
         loop=get_event_loop(),
         latency=0,
-        bandwidth=float('INF'),
         num_proposer_nodes=20,
         num_relay_nodes=180,
         simulation_time=120,

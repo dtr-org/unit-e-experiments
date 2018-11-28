@@ -12,15 +12,22 @@ from random import (
     sample,
     shuffle
 )
+from typing import (
+    Dict,
+    List,
+    Optional,
+    Set,
+    Tuple
+)
 
 
 def create_directed_graph(
-        num_nodes=11,
-        num_outbound_connections=8,
-        max_inbound_connections=125,
-        graph_seed_size=None,
-        model='static',
-):
+        num_nodes: int = 11,
+        num_outbound_connections: int = 8,
+        max_inbound_connections: int = 125,
+        graph_seed_size: Optional[int] = None,
+        model: str = 'static',
+) -> Tuple[Set[Tuple[int, int]], Dict[int, int]]:
     """
     This function returns a set of directed edges between numbered nodes
     representing a directed graph. The graph generation models rely on the
@@ -69,10 +76,10 @@ def create_directed_graph(
 
 
 def create_static_graph(
-        num_nodes=11,
-        num_outbound_connections=8,
-        max_ingoing_connections=125,
-) -> (set, dict):
+        num_nodes: int = 11,
+        num_outbound_connections: int = 8,
+        max_ingoing_connections: int = 125,
+) -> Tuple[Set[Tuple[int, int]], Dict[int, int]]:
     if max_ingoing_connections < num_outbound_connections:
         raise RuntimeError(
             'max_inbound_connections must be greater than or equal to num_outbound_connections'
@@ -98,11 +105,11 @@ def create_static_graph(
 
 
 def create_growing_graph(
-        num_nodes=11,
-        num_outbound_connections=8,
-        max_inbound_connections=125,
-        graph_seed_size=None,
-) -> (set, dict):
+        num_nodes: int = 11,
+        num_outbound_connections: int = 8,
+        max_inbound_connections: int = 125,
+        graph_seed_size: Optional[int] = None,
+) -> Tuple[Set[Tuple[int, int]], Dict[int, int]]:
     if graph_seed_size is None:
         graph_seed_size = min(num_nodes, num_outbound_connections + 1)
     elif graph_seed_size > num_nodes:
@@ -134,11 +141,11 @@ def create_growing_graph(
 
 
 def create_preferential_attachment_graph(
-        num_nodes=11,
-        num_outbound_connections=8,
-        max_inbound_connections=125,
-        graph_seed_size=None,
-) -> (set, dict):
+        num_nodes: int = 11,
+        num_outbound_connections: int = 8,
+        max_inbound_connections: int = 125,
+        graph_seed_size: Optional[int] = None,
+) -> Tuple[Set[Tuple[int, int]], Dict[int, int]]:
     if graph_seed_size is None:
         graph_seed_size = min(num_nodes, num_outbound_connections + 1)
     elif graph_seed_size > num_nodes:
@@ -181,11 +188,11 @@ def create_preferential_attachment_graph(
 
 
 def enforce_nodes_reconnections(
-        graph_edges: set,
-        inbound_degrees: dict,
-        num_reconnection_rounds=1,
-        num_outbound_connections=8
-) -> (set, dict):
+        graph_edges: Set[Tuple[int, int]],
+        inbound_degrees: Dict[int, int],
+        num_reconnection_rounds: int = 1,
+        num_outbound_connections: int = 8
+) -> Tuple[Set[Tuple[int, int]], Dict[int, int]]:
     """
     This function tries to 'shuffle' the graph by simulating nodes
     re-connections, this is useful to decrease the probability of having "sink
@@ -242,7 +249,11 @@ def enforce_nodes_reconnections(
     return graph_edges, inbound_degrees
 
 
-def get_node_neighbours(node_id: int, graph_edges: set, degree=1):
+def get_node_neighbours(
+        node_id: int,
+        graph_edges: Set[Tuple[int, int]],
+        degree: int = 1
+) -> Set[int]:
     """Returns the second-degree neighbours of a node in a given graph"""
     neighbours = {e[0] for e in graph_edges if e[1] == node_id}.union({
         e[1] for e in graph_edges if e[0] == node_id
@@ -257,11 +268,11 @@ def get_node_neighbours(node_id: int, graph_edges: set, degree=1):
 
 
 def compute_degrees(
-        graph_edges: set,
+        graph_edges: Set[Tuple[int, int]],
         num_nodes: int,
-        processed_edges=None,
-        degrees: list = ()
-) -> (list, set):
+        processed_edges: Optional[Set[Tuple[int, int]]] = None,
+        degrees: List[int] = ()
+) -> Tuple[List[int], Set[Tuple[int, int]]]:
     """
     Computes the node degrees without making distinctions between inbound &
     outbound connections. It returns the list of processed edges as well in
@@ -287,21 +298,19 @@ def compute_degrees(
     return degrees, processed_edges
 
 
-def degrees_distribution(degrees: list) -> list:
+def degrees_distribution(degrees: List[int]) -> List[int]:
     """
     Given an ordered list of degrees, it returns a distribution suitable for
     weighed random selections
     """
-
     return reduce(lambda dd, d: dd + [dd[-1] + d], degrees, [0])[1:]
 
 
-def weighted_random_int(degrees_dist: list) -> int:
+def weighted_random_int(degrees_dist: List[int]) -> int:
     """
     Returns a random integer between 0 and L, being L the length of an
     accumulated integer weights list
     """
-
     uniform_rnd = randint(1, degrees_dist[-1])
     for idx, accumulated_weight in enumerate(degrees_dist):
         if uniform_rnd <= accumulated_weight:
@@ -312,8 +321,10 @@ def weighted_random_int(degrees_dist: list) -> int:
 
 
 def ensure_one_inbound_connection_per_node(
-        num_nodes: int, graph_edges: set, inbound_degrees: defaultdict
-) -> (set, dict):
+        num_nodes: int,
+        graph_edges: Set[Tuple[int, int]],
+        inbound_degrees: Dict[int, int]
+) -> Tuple[Set[Tuple[int, int]], Dict[int, int]]:
     """
     This function tries to enforce that each node has at least 1 inbound
     connection by performing a small amount of changes without altering most of
