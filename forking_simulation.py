@@ -32,7 +32,7 @@ try:
     for extra_path in extra_import_paths:
         sys.path.append(extra_path)
 except ModuleNotFoundError:
-    print('Missing import paths for Unit-E functional test packages')
+    print('Missing import paths for Unit-e functional test packages')
     print('Copy "settings.py.example" to "settings.py" and adapt the paths')
 
 

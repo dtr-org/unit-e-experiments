@@ -1,6 +1,6 @@
-# Unit-E Simulations
+# Unit-e Simulations
 
-Tools to simulate Unit-E networks
+Tools to simulate Unit-e networks
 
 
 ## Requisites
@@ -11,4 +11,4 @@ Tools to simulate Unit-E networks
 
 In order to run the simulations, you must copy the file `settings.py.example` as
 `settings.py` and adapt the listed paths to make possible finding some Python
-packages available in the Unit-E repository.
+packages available in the Unit-e repository.
