@@ -2,6 +2,11 @@
 
 Tools to simulate Unit-e networks
 
+## License
+
+This code published in this repository is released under the terms of the MIT
+license. See [LICENSE](LICENSE) for more information or see
+https://opensource.org/licenses/MIT.
 
 ## Requisites
 
