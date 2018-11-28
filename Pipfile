@@ -7,10 +7,11 @@ verify_ssl = true
 
 [dev-packages]
 flake8 = "~=3.6"
+mypy = "*"
 pytest = "~=4.0"
+pytest-cov = "~=2.6"
 pytest-flake8 = "~=1.0"
 pytest-mypy = "~=0.3"
-mypy = "*"
 
 [requires]
 python_version = "3.6"
