@@ -1,0 +1,16 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[packages]
+
+[dev-packages]
+flake8 = "~=3.6"
+pytest = "~=4.0"
+pytest-flake8 = "~=1.0"
+pytest-mypy = "~=0.3"
+mypy = "*"
+
+[requires]
+python_version = "3.6"
