@@ -24,18 +24,6 @@ The outcomes that we want to observe are:
 
 import sys
 
-try:
-    from settings import (
-        extra_import_paths,
-        united_binary_path
-    )
-    for extra_path in extra_import_paths:
-        sys.path.append(extra_path)
-except ModuleNotFoundError:
-    print('Missing import paths for Unit-e functional test packages')
-    print('Copy "settings.py.example" to "settings.py" and adapt the paths')
-
-
 from asyncio import (
     AbstractEventLoop,
     coroutine,
@@ -49,7 +37,6 @@ from logging import (
     basicConfig as logging_config,
     getLogger
 )
-from os import environ
 from os.path import (
     dirname,
     normpath,
@@ -294,7 +281,6 @@ def main():
 
     tf_util.MAX_NODES = 500  # has to be greater than 2n+2 where n = num_nodes
     tf_util.PortSeed.n = 314159
-    environ['UNITED'] = united_binary_path
 
     # TODO: Load simulation settings from settings.py
     simulation = ForkingSimulation(
