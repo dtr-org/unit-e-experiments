@@ -8,7 +8,7 @@ TRAVIS_SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_DIR="$( cd "${TRAVIS_SCRIPTS_DIR}/.." && pwd )"
 
 source "${PROJECT_DIR}/.venv/bin/activate"
-export $(egrep -v '^#' .env | xargs -d '\n')
+export $(egrep -v '^#' "${TRAVIS_SCRIPTS_DIR}/.env" | xargs -d '\n')
 
 pytest
 
