@@ -8,11 +8,14 @@
 from collections import defaultdict
 
 from experiments.utils.graph import (
-    degrees_distribution,
-    weighted_random_int,
-    get_node_neighbours,
     compute_degrees,
+    create_static_graph,
+    create_growing_graph,
+    create_preferential_attachment_graph,
+    degrees_distribution,
     enforce_nodes_reconnections,
+    get_node_neighbours,
+    weighted_random_int,
 )
 
 
@@ -147,3 +150,38 @@ def test_enforce_nodes_reconnections():
     assert max(degrees) <= 4
     for d in idg2:
         assert idg2[d] <= degrees[d]
+
+
+def test_create_static_graph():
+    g, d = create_static_graph(num_nodes=13, num_outbound_connections=5)
+
+    assert 5 * 13 == len(g)
+    for i in range(13):
+        assert 5 == len({e for e in g if e[0] == i})
+        assert (i, i) not in g
+
+
+def test_create_growing_graph():
+    g, d = create_growing_graph(num_nodes=17, num_outbound_connections=5)
+
+    assert 17 * 5 == len(g)
+    for i in range(17):
+        assert 5 == len({e for e in g if e[0] == i})
+        assert (i, i) not in g
+
+    assert max(d.values()) >= 5
+    assert d[16] == 0
+
+
+def test_create_preferential_attachment_graph():
+    g, d = create_preferential_attachment_graph(
+        num_nodes=17, num_outbound_connections=5
+    )
+
+    assert 17 * 5 == len(g)
+    for i in range(17):
+        assert 5 == len({e for e in g if e[0] == i})
+        assert (i, i) not in g
+
+    assert max(d.values()) >= 5
+    assert d[16] == 0
