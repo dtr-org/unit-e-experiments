@@ -12,6 +12,7 @@ from experiments.utils.graph import (
     weighted_random_int,
     get_node_neighbours,
     compute_degrees,
+    enforce_nodes_reconnections,
 )
 
 
@@ -125,3 +126,24 @@ def test_compute_degrees():
     assert 5 == degrees[21]
     for i in degrees:
         assert i in [3, 19, 49, 50, 17, 45, 21] or 4 == degrees[i]
+
+
+def test_enforce_nodes_reconnections():
+    g = torus_grid_7x7_rd.copy()
+    idg = {i: 2 for i in range(7 * 7)}
+
+    g2, idg2 = enforce_nodes_reconnections(graph_edges=g, inbound_degrees=idg)
+
+    assert g is not g2
+    assert len(g) == len(g2)
+
+    assert idg is not idg2
+    assert set(idg.keys()) == set(idg2.keys())
+    assert min(idg2.values()) >= 0
+    assert max(idg2.values()) <= 4
+
+    degrees, _ = compute_degrees(g2, 7 * 7)
+    assert min(degrees) >= 2
+    assert max(degrees) <= 4
+    for d in idg2:
+        assert idg2[d] <= degrees[d]
