@@ -9,8 +9,23 @@ from collections import defaultdict
 
 from experiments.utils.graph import (
     degrees_distribution,
-    weighted_random_int
+    weighted_random_int,
+    get_node_neighbours,
 )
+
+
+torus_grid_7x7_rd = {  # The edges point "to the right" and down
+    e for ep in {
+        ((i * 7 + j, i * 7 + (j + 1) % 7), (i * 7 + j, (((i + 1) % 7) * 7 + j)))
+        for i in range(7) for j in range(7)
+    } for e in ep
+}
+torus_grid_7x7_lu = {  # The edges point "to the left" and up
+    e for ep in {
+        ((i * 7 + j, i * 7 + (j - 1) % 7), (i * 7 + j, (((i - 1) % 7) * 7 + j)))
+        for i in range(7) for j in range(7)
+    } for e in ep
+}
 
 
 def test_degrees_distribution():
@@ -36,3 +51,31 @@ def test_weighted_random_int():
         assert rnd in range5
     for i in range(1, 5):
         assert counter[i - 1] > counter[i]
+
+
+def test_get_node_neighbours():
+    assert {1, 7, 6, 42} == get_node_neighbours(
+        node_id=0, graph_edges=torus_grid_7x7_rd, degree=1
+    )
+    assert {1, 7, 6, 42} == get_node_neighbours(
+        node_id=0, graph_edges=torus_grid_7x7_lu, degree=1
+    )
+    assert {47, 41, 42, 6} == get_node_neighbours(
+        node_id=48, graph_edges=torus_grid_7x7_rd, degree=1
+    )
+    assert {47, 41, 42, 6} == get_node_neighbours(
+        node_id=48, graph_edges=torus_grid_7x7_lu, degree=1
+    )
+
+    assert {1, 7, 6, 42, 2, 8, 43, 14, 5, 48, 13, 35} == get_node_neighbours(
+        node_id=0, graph_edges=torus_grid_7x7_rd, degree=2
+    )
+    assert {1, 7, 6, 42, 2, 8, 43, 14, 5, 48, 13, 35} == get_node_neighbours(
+        node_id=0, graph_edges=torus_grid_7x7_lu, degree=2
+    )
+    assert {47, 41, 42, 6, 0, 5, 34, 35, 40, 43, 13, 46} == get_node_neighbours(
+        node_id=48, graph_edges=torus_grid_7x7_rd, degree=2
+    )
+    assert {47, 41, 42, 6, 0, 5, 34, 35, 40, 43, 13, 46} == get_node_neighbours(
+        node_id=48, graph_edges=torus_grid_7x7_lu, degree=2
+    )

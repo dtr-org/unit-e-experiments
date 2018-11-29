@@ -265,7 +265,7 @@ def get_node_neighbours(
     for i in range(1, degree):
         neighbours = {e[0] for e in graph_edges if e[1] in neighbours}.union({
             e[1] for e in graph_edges if e[0] in neighbours
-        })  # n-degree neighbours
+        }).union(neighbours)
 
     return neighbours.difference({node_id})
 
