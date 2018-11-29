@@ -12,9 +12,9 @@ branches:
     - master
 
 install:
-  - set -o errexit; source .travis/test_01_install.sh
+  - set -o errexit; source .travis/01_install.sh
 script:
-  - set -o errexit; source .travis/test_02_script.sh
+  - set -o errexit; source .travis/02_script.sh
 
 cache:
   pip: true
