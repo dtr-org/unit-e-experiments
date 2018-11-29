@@ -11,6 +11,7 @@ from experiments.utils.graph import (
     degrees_distribution,
     weighted_random_int,
     get_node_neighbours,
+    compute_degrees,
 )
 
 
@@ -79,3 +80,48 @@ def test_get_node_neighbours():
     assert {47, 41, 42, 6, 0, 5, 34, 35, 40, 43, 13, 46} == get_node_neighbours(
         node_id=48, graph_edges=torus_grid_7x7_lu, degree=2
     )
+
+
+def test_compute_degrees():
+    # Very basic cases
+    degrees, _ = compute_degrees(torus_grid_7x7_rd, 7 * 7)
+    assert 7 * 7 == len(degrees)
+    for i in degrees:
+        assert 4 == degrees[i]
+
+    degrees, _ = compute_degrees(torus_grid_7x7_lu, 7 * 7)
+    assert 7 * 7 == len(degrees)
+    for i in degrees:
+        assert 4 == degrees[i]
+
+    # Altering the graph alters the results
+    g = torus_grid_7x7_rd.copy()
+    g.add((3, 19))
+    degrees, _ = compute_degrees(g, 7 * 7)
+    assert 5 == degrees[3]
+    assert 5 == degrees[19]
+    for i in degrees:
+        assert i in [3, 19] or 4 == degrees[i]
+
+    # The function does not consider edge direction
+    g.add((19, 3))
+    degrees, processed_edges = compute_degrees(g, 7 * 7)
+    assert 5 == degrees[3]
+    assert 5 == degrees[19]
+    for i in degrees:
+        assert i in [3, 19] or 4 == degrees[i]
+
+    # The function is able to reuse previous work
+    g = g.union({
+        (49, 17), (49, 45), (49, 21), (49, 50),
+        (50, 49), (50, 45)
+    })
+
+    degrees, _ = compute_degrees(g, 7 * 7 + 2, processed_edges, degrees)
+    assert 4 == degrees[49]
+    assert 2 == degrees[50]
+    assert 5 == degrees[17]
+    assert 6 == degrees[45]
+    assert 5 == degrees[21]
+    for i in degrees:
+        assert i in [3, 19, 49, 50, 17, 45, 21] or 4 == degrees[i]
