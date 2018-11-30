@@ -150,8 +150,6 @@ class ForkingSimulation:
         self.loop.create_task(self.sample_forever())
         self.loop.run_until_complete(asyncio_sleep(self.simulation_time))
 
-        self.results_file.close()
-
     @coroutine
     def sample_forever(self):
         self.logger.info('Starting sampling process')
@@ -188,6 +186,9 @@ class ForkingSimulation:
         try:
             self.run()
         finally:
+            if not self.results_file.closed:
+                self.results_file.close()
+
             self.stop_nodes()
             self.cleanup_directories()
             self.loop.close()
@@ -293,7 +294,7 @@ def main():
         graph_model='preferential_attachment',
         results_file_name='fork_simulation_results.csv'
     )
-    simulation.run()
+    simulation.safe_run()
 
 
 if __name__ == '__main__':
