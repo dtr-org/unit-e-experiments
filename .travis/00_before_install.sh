@@ -5,10 +5,4 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 export TRAVIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-export PIPENV_VENV_IN_PROJECT=1
-export PIPENV_IGNORE_VIRTUALENVS=1  # Use own virtualenv instead of Travis' one
-
-pip install pipenv
-pipenv install --dev
-
-ssh-agent $(ssh-add "${TRAVIS_DIR}/ssh_key"; git clone git@github.com:dtr-org/unit-e.git "${TRAVIS_DIR}/unit-e")
+openssl aes-256-cbc -K ${encrypted_3508967e0358_key} -iv ${encrypted_3508967e0358_iv} -in "${TRAVIS_DIR}/ssh_key.enc" -out "${TRAVIS_DIR}/ssh_key" -d

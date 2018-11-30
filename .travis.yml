@@ -11,6 +11,8 @@ branches:
   only:
     - master
 
+before_install:
+  - set -o errexit; source .travis/00_before_install.sh
 install:
   - set -o errexit; source .travis/01_install.sh
 script:
