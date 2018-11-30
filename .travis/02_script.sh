@@ -9,8 +9,8 @@ PRJ_DIR="$( cd "${TRAVIS_DIR}/.." && pwd )"
 
 source "${PRJ_DIR}/.venv/bin/activate"
 
-export MYPYPATH="${PRJ_DIR}:${PRJ_DIR}/.travis/unit-e/test/functional:${MYPYPATH}"
-export PYTHONPATH="${PRJ_DIR}:${PRJ_DIR}/.travis/unit-e/test/functional:${PYTHONPATH}"
+export MYPYPATH="${PRJ_DIR}:${TRAVIS_DIR}/unit-e/test/functional:${MYPYPATH}"
+export PYTHONPATH="${PRJ_DIR}:${TRAVIS_DIR}/unit-e/test/functional:${PYTHONPATH}"
 
 pytest
 
