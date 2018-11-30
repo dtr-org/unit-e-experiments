@@ -11,4 +11,4 @@ export PIPENV_IGNORE_VIRTUALENVS=1  # Use own virtualenv instead of Travis' one
 pip install pipenv
 pipenv install --dev
 
-ssh-agent $(ssh-add "${TRAVIS_DIR}/ssh_key"; git clone git@github.com:dtr-org/unit-e.git "${TRAVIS_DIR}/unit-e")
+git clone git@github.com:dtr-org/unit-e.git "${TRAVIS_DIR}/unit-e"
