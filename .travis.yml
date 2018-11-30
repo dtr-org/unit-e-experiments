@@ -9,12 +9,10 @@ branches:
   only:
     - master
 
-before_install:
-  - set -o errexit; source .travis/00_before_install.sh
 install:
-  - set -o errexit; source .travis/01_install.sh
+  - set -o errexit; source .travis/04_install.sh
 script:
-  - set -o errexit; source .travis/02_script.sh
+  - set -o errexit; source .travis/06_script.sh
 
 cache:
   pip: true

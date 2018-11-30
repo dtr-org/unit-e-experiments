@@ -12,6 +12,7 @@ source "${PRJ_DIR}/.venv/bin/activate"
 export MYPYPATH="${PRJ_DIR}:${TRAVIS_DIR}/unit-e/test/functional:${MYPYPATH}"
 export PYTHONPATH="${PRJ_DIR}:${TRAVIS_DIR}/unit-e/test/functional:${PYTHONPATH}"
 
+pipenv check  # Checking potential dependency problems (PEP 508 requirements)
 pytest
 
 deactivate
