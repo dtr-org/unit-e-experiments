@@ -1,5 +1,7 @@
 # Unit-e Simulations
 
+[![Build Status](https://travis-ci.com/dtr-org/unit-e-simulations.svg?token=1uWjuV23YgNxZQ98zqxB&branch=master)](https://travis-ci.com/dtr-org/unit-e-simulations)
+
 Tools to simulate Unit-e networks
 
 ## License
