@@ -1,0 +1,18 @@
+os: linux
+dist: xenial
+
+language: python
+python:
+  - "3.6"
+
+branches:
+  only:
+    - master
+
+install:
+  - set -o errexit; source .travis/04_install.sh
+script:
+  - set -o errexit; source .travis/06_script.sh
+
+cache:
+  pip: true
