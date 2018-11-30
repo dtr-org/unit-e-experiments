@@ -262,14 +262,13 @@ class ForkingSimulation:
             graph_edges=graph_edges,
             inbound_degrees=inbound_degrees,
             num_reconnection_rounds=1,
-            num_outbound_connections=8
         )
 
         # This fix the rare case where some nodes don't have inbound connections
         self.graph_edges, _ = ensure_one_inbound_connection_per_node(
             num_nodes=self.num_nodes,
             graph_edges=graph_edges,
-            inbound_degrees=inbound_degrees
+            inbound_degrees=inbound_degrees,
         )
 
 
