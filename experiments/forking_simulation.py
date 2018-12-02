@@ -170,17 +170,11 @@ class ForkingSimulation:
             # There's redundant data because it allows us to keep all the data
             # in one single file, without having to perform "join" operations of
             # any type.
-            sample_line = map(str, [
-                time_delta,
-                self.latency,
-                node_id,
-                tip_stats['active'],
-                tip_stats['valid-fork'],
-                tip_stats['valid-headers'],
-                tip_stats['headers-only'],
-                # TODO: Add node centrality measures
-            ])
-            self.results_file.write((', '.join(sample_line) + '\n').encode())
+            self.results_file.write((
+                f'{time_delta}, {node_id}, {self.latency}, '
+                f'{tip_stats["active"]}, {tip_stats["valid-fork"]}, '
+                f'{tip_stats["valid-headers"]}, {tip_stats["headers-only"]}\n'
+            ).encode())
 
     def safe_run(self):
         try:
