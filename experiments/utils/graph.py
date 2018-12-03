@@ -193,7 +193,7 @@ def create_preferential_attachment_graph(
 def enforce_nodes_reconnections(
         graph_edges: Set[Tuple[int, int]],
         inbound_degrees: Dict[int, int],
-        num_reconnection_rounds: int = 1
+        num_reconnection_rounds: int = 1,
 ) -> Tuple[Set[Tuple[int, int]], Dict[int, int]]:
     """
     This function tries to 'shuffle' the graph by simulating nodes

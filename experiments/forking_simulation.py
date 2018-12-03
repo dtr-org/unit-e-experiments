@@ -75,6 +75,7 @@ class ForkingSimulation:
             num_relay_nodes: int,
             simulation_time: float = 600,
             sample_time: float = 1,
+            sample_size: int = 10,
             graph_model: str = 'preferential_attachment',
             results_file_name: str = 'fork_simulation_results.csv'
     ):
@@ -103,6 +104,7 @@ class ForkingSimulation:
 
         self.simulation_time = simulation_time
         self.sample_time = sample_time
+        self.sample_size = sample_size
 
         self.start_time = 0
 
@@ -170,7 +172,7 @@ class ForkingSimulation:
         sample_time = time()
         time_delta = sample_time - self.start_time
 
-        for node_id, node in enumerate(self.nodes):
+        for node_id, node in sample(list(enumerate(self.nodes)), self.sample_size):
             tip_stats = defaultdict(int)
             for tip in node.getchaintips():
                 tip_stats[tip['status']] += 1
@@ -292,6 +294,7 @@ def main():
         num_relay_nodes=180,
         simulation_time=120,
         sample_time=1,
+        sample_size=10,
         graph_model='preferential_attachment',
         results_file_name='fork_simulation_results.csv'
     )
