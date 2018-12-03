@@ -4,6 +4,8 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+set -o errexit;
+
 TRAVIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PRJ_DIR="$( cd "${TRAVIS_DIR}/.." && pwd )"
 
