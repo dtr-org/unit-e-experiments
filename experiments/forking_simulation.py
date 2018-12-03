@@ -113,6 +113,7 @@ class ForkingSimulation:
         self.results_file_name = results_file_name
 
         self.define_network_topology()
+        self.is_running = False
 
     def run(self):
         self.logger.info('Starting simulation')
@@ -148,16 +149,23 @@ class ForkingSimulation:
 
         self.start_time = time()
         self.loop.create_task(self.sample_forever())
-        self.loop.run_until_complete(asyncio_sleep(self.simulation_time))
+        self.loop.run_until_complete(self.trigger_simulation_stop())
+
+    @coroutine
+    def trigger_simulation_stop(self):
+        yield from asyncio_sleep(self.simulation_time)
+        self.is_running = False
+        yield from asyncio_sleep(3 * self.sample_time)
 
     @coroutine
     def sample_forever(self):
         self.logger.info('Starting sampling process')
-        while True:
-            yield from asyncio_sleep(self.sample_time)
-            yield from self.sample()
 
-    @coroutine
+        self.is_running = True
+        while self.is_running:
+            yield from asyncio_sleep(self.sample_time)
+            self.sample()
+
     def sample(self):
         sample_time = time()
         time_delta = sample_time - self.start_time
