@@ -194,7 +194,6 @@ def enforce_nodes_reconnections(
         graph_edges: Set[Tuple[int, int]],
         inbound_degrees: Dict[int, int],
         num_reconnection_rounds: int = 1,
-        num_outbound_connections: int = 8
 ) -> Tuple[Set[Tuple[int, int]], Dict[int, int]]:
     """
     This function tries to 'shuffle' the graph by simulating nodes
@@ -221,10 +220,13 @@ def enforce_nodes_reconnections(
             }
 
             # Disconnecting node, just for an instant
+            num_outbound_connections = 0
             for e in graph_edges.copy():
                 if e[0] == node_id or e[1] == node_id:
                     graph_edges.remove(e)
                     inbound_degrees[e[1]] -= 1
+                    if e[0] == node_id:
+                        num_outbound_connections += 1
 
             # Reconnecting the node to others
             num_recreated_outbound_connections = 0
@@ -265,7 +267,7 @@ def get_node_neighbours(
     for i in range(1, degree):
         neighbours = {e[0] for e in graph_edges if e[1] in neighbours}.union({
             e[1] for e in graph_edges if e[0] in neighbours
-        })  # n-degree neighbours
+        }).union(neighbours)
 
     return neighbours.difference({node_id})
 

@@ -55,12 +55,12 @@ from typing import (
 
 import test_framework.util as tf_util
 
-from utils.graph import (
+from experiments.utils.graph import (
     enforce_nodes_reconnections,
     ensure_one_inbound_connection_per_node,
     create_directed_graph,
 )
-from utils.nodes_hub import NodesHub
+from experiments.utils.nodes_hub import NodesHub
 from test_framework.regtest_mnemonics import regtest_mnemonics
 from test_framework.test_node import TestNode
 from test_framework.util import initialize_datadir
@@ -75,6 +75,7 @@ class ForkingSimulation:
             num_relay_nodes: int,
             simulation_time: float = 600,
             sample_time: float = 1,
+            sample_size: int = 10,
             graph_model: str = 'preferential_attachment',
             results_file_name: str = 'fork_simulation_results.csv'
     ):
@@ -103,6 +104,7 @@ class ForkingSimulation:
 
         self.simulation_time = simulation_time
         self.sample_time = sample_time
+        self.sample_size = sample_size
 
         self.start_time = 0
 
@@ -113,6 +115,7 @@ class ForkingSimulation:
         self.results_file_name = results_file_name
 
         self.define_network_topology()
+        self.is_running = False
 
     def run(self):
         self.logger.info('Starting simulation')
@@ -148,23 +151,28 @@ class ForkingSimulation:
 
         self.start_time = time()
         self.loop.create_task(self.sample_forever())
-        self.loop.run_until_complete(asyncio_sleep(self.simulation_time))
+        self.loop.run_until_complete(self.trigger_simulation_stop())
 
-        self.results_file.close()
+    @coroutine
+    def trigger_simulation_stop(self):
+        yield from asyncio_sleep(self.simulation_time)
+        self.is_running = False
+        yield from asyncio_sleep(3 * self.sample_time)
 
     @coroutine
     def sample_forever(self):
         self.logger.info('Starting sampling process')
-        while True:
-            yield from asyncio_sleep(self.sample_time)
-            yield from self.sample()
 
-    @coroutine
+        self.is_running = True
+        while self.is_running:
+            yield from asyncio_sleep(self.sample_time)
+            self.sample()
+
     def sample(self):
         sample_time = time()
         time_delta = sample_time - self.start_time
 
-        for node_id, node in enumerate(self.nodes):
+        for node_id, node in sample(list(enumerate(self.nodes)), self.sample_size):
             tip_stats = defaultdict(int)
             for tip in node.getchaintips():
                 tip_stats[tip['status']] += 1
@@ -172,22 +180,19 @@ class ForkingSimulation:
             # There's redundant data because it allows us to keep all the data
             # in one single file, without having to perform "join" operations of
             # any type.
-            sample_line = map(str, [
-                time_delta,
-                self.latency,
-                node_id,
-                tip_stats['active'],
-                tip_stats['valid-fork'],
-                tip_stats['valid-headers'],
-                tip_stats['headers-only'],
-                # TODO: Add node centrality measures
-            ])
-            self.results_file.write((', '.join(sample_line) + '\n').encode())
+            self.results_file.write((
+                f'{time_delta}, {node_id}, {self.latency}, '
+                f'{tip_stats["active"]}, {tip_stats["valid-fork"]}, '
+                f'{tip_stats["valid-headers"]}, {tip_stats["headers-only"]}\n'
+            ).encode())
 
     def safe_run(self):
         try:
             self.run()
         finally:
+            if not self.results_file.closed:
+                self.results_file.close()
+
             self.stop_nodes()
             self.cleanup_directories()
             self.loop.close()
@@ -261,14 +266,13 @@ class ForkingSimulation:
             graph_edges=graph_edges,
             inbound_degrees=inbound_degrees,
             num_reconnection_rounds=1,
-            num_outbound_connections=8
         )
 
         # This fix the rare case where some nodes don't have inbound connections
         self.graph_edges, _ = ensure_one_inbound_connection_per_node(
             num_nodes=self.num_nodes,
             graph_edges=graph_edges,
-            inbound_degrees=inbound_degrees
+            inbound_degrees=inbound_degrees,
         )
 
 
@@ -290,10 +294,11 @@ def main():
         num_relay_nodes=180,
         simulation_time=120,
         sample_time=1,
+        sample_size=10,
         graph_model='preferential_attachment',
         results_file_name='fork_simulation_results.csv'
     )
-    simulation.run()
+    simulation.safe_run()
 
 
 if __name__ == '__main__':
