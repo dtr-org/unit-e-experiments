@@ -138,9 +138,6 @@ class ForkingSimulation:
                 self.nodes_hub.set_nodes_delay(i, j, self.latency)
 
         # Loading wallets... only for proposers (which are picked randomly)
-        self.proposer_node_ids = sample(
-            range(self.num_nodes), self.num_proposer_nodes
-        )
         for idx, proposer_id in enumerate(self.proposer_node_ids):
             self.nodes[proposer_id].importmasterkey(
                 regtest_mnemonics[idx]['mnemonics']
@@ -213,11 +210,29 @@ class ForkingSimulation:
 
     def setup_nodes(self):
         self.logger.info('Creating node wrappers')
+
+        self.proposer_node_ids = sample(
+            range(self.num_nodes), self.num_proposer_nodes
+        )
+
+        relay_args = ['-connect=0', '-listen=1', '-proposing=0']
+        proposer_args = ['-connect=0', '-listen=1', '-proposing=1']
+
         self.nodes = [
             TestNode(
-                i=i, dirname=self.tmp_dir, extra_args=[], rpchost=None,
-                timewait=None, binary=None, stderr=None, mocktime=0,
-                coverage_dir=None, use_cli=False
+                i=i,
+                dirname=self.tmp_dir,
+                extra_args=(
+                    proposer_args if i in self.proposer_node_ids
+                    else relay_args
+                ),
+                rpchost=None,
+                timewait=None,
+                binary=None,
+                stderr=None,
+                mocktime=0,
+                coverage_dir=None,
+                use_cli=False
             )
             for i in range(self.num_nodes)
         ]
