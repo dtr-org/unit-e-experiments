@@ -11,7 +11,6 @@ from asyncio import (
     AbstractServer,
     Task,
     Transport,
-    coroutine,
     gather,
     sleep as asyncio_sleep
 )
@@ -166,8 +165,7 @@ class NodesHub:
         self.proxy2receiver_transports.pop((outbound_idx, inbound_idx), None)
         self.relay_tasks.pop((outbound_idx, inbound_idx), None)
 
-    @coroutine
-    def connect_nodes(self, outbound_idx: int, inbound_idx: int):
+    async def connect_nodes(self, outbound_idx: int, inbound_idx: int):
         """
         :param outbound_idx: Refers the "sender" (asking for a new connection)
         :param inbound_idx: Refers the "receiver" (listening for new connections)
@@ -175,13 +173,13 @@ class NodesHub:
 
         # We have to wait until all the proxies are configured and listening
         while len(self.proxy_servers) < len(self.nodes):
-            yield from asyncio_sleep(0)
+            await asyncio_sleep(0)
 
         # We have to be sure that all the previous calls to connect_nodes have
         # finished. Because we are using cooperative scheduling we don't have to
         # worry about race conditions, this while loop is enough.
         while self.pending_connection is not None:
-            yield from asyncio_sleep(0)
+            await asyncio_sleep(0)
 
         # We acquire the lock. This tuple is also useful for the NodeProxy
         # instance.
@@ -204,7 +202,7 @@ class NodesHub:
                 self.pending_connection not in self.sender2proxy_transports or
                 self.pending_connection not in self.proxy2receiver_transports
         ):
-            yield from asyncio_sleep(0)
+            await asyncio_sleep(0)
 
         self.pending_connection = None  # We release the lock
 
@@ -263,14 +261,13 @@ class NodeProxy(Protocol):
     def data_received(self, data):
         self.hub_ref.loop.create_task(self.__handle_received_data(data))
 
-    @coroutine
-    def __handle_received_data(self, data):
+    async def __handle_received_data(self, data):
         while self.sender2receiver_pair not in self.hub_ref.proxy2receiver_transports:
             # We can't relay the data yet, we need a connection on the other side
-            yield from asyncio_sleep(0)
+            await asyncio_sleep(0)
 
         if self.sender2receiver_pair in self.hub_ref.node2node_delays:
-            yield from asyncio_sleep(
+            await asyncio_sleep(
                 self.hub_ref.node2node_delays[self.sender2receiver_pair]
             )
 
@@ -311,14 +308,13 @@ class ProxyRelay(Protocol):
     def data_received(self, data):
         self.hub_ref.loop.create_task(self.__handle_received_data(data))
 
-    @coroutine
-    def __handle_received_data(self, data):
+    async def __handle_received_data(self, data):
         while self.sender2receiver_pair not in self.hub_ref.sender2proxy_transports:
             # We can't relay the data yet, we need a connection on the other side
-            yield from asyncio_sleep(0)
+            await asyncio_sleep(0)
 
         if self.receiver2sender_pair in self.hub_ref.node2node_delays:
-            yield from asyncio_sleep(
+            await asyncio_sleep(
                 self.hub_ref.node2node_delays[self.receiver2sender_pair]
             )
 
