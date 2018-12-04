@@ -8,6 +8,7 @@
 from asyncio import (
     AbstractEventLoop,
     Protocol,
+    AbstractServer,
     Task,
     Transport,
     coroutine,
@@ -17,7 +18,6 @@ from asyncio import (
 from logging import getLogger
 from struct import pack, unpack
 from typing import (
-    Coroutine,
     Dict,
     List,
     Optional,
@@ -57,8 +57,7 @@ class NodesHub:
             self,
             loop: AbstractEventLoop,
             nodes: List[TestNode],
-            host: str = '127.0.0.1',
-            sync_setup: bool = False
+            host: str = '127.0.0.1'
     ):
         self.loop = loop
         self.nodes = nodes
@@ -68,8 +67,7 @@ class NodesHub:
         # This allows us to specify asymmetric delays
         self.node2node_delays: Dict[Tuple[int, int], float] = {}
 
-        self.proxy_coroutines: List[Coroutine] = []
-        self.proxy_tasks: List[Task] = []
+        self.proxy_servers: List[AbstractServer] = []
         self.sender2proxy_transports: Dict[Tuple[int, int], Transport] = {}
 
         self.relay_tasks: Dict[Tuple[int, int], Task] = {}
@@ -78,39 +76,26 @@ class NodesHub:
         # Lock-like object used by NodesHub.connect_nodes
         self.pending_connection: Optional[Tuple[int, int]] = None
 
-        self.setup_proxies(sync_setup)
-
-    def setup_proxies(self, sync_setup=False):
+    def sync_start_proxies(self):
         """
-        This method creates a listener proxy for each node, the connections from
-        each proxy to the real node that they represent will be done whenever a
-        node connects to the proxy.
+        This method creates (& starts) a listener proxy for each node, the
+        connections from each proxy to the real node that they represent will be
+        done whenever a node connects to the proxy.
 
-        If sync_setup=False, then the connections are scheduled, but will be
-        performed only when we start the loop.
+        It starts the nodes's proxies.
         """
-
-        for i, node in enumerate(self.nodes):
-            proxy_coroutine = self.loop.create_server(
+        proxy_coroutines = [
+            self.loop.create_server(
                 protocol_factory=lambda: NodeProxy(hub_ref=self),
                 host=self.host,
                 port=self.get_proxy_port(i)
             )
+            for i, node in enumerate(self.nodes)
+        ]
 
-            if not sync_setup:
-                self.proxy_tasks.append(self.loop.create_task(proxy_coroutine))
-            else:
-                self.proxy_coroutines.append(proxy_coroutine)
-
-    def sync_start_proxies(self):
-        """
-        Helper to make easier using NodesHub in non-asyncio aware code. Not
-        directly executed in constructor to ensure decoupling between
-        constructive & behavioral patterns.
-
-        It starts the nodes's proxies.
-        """
-        self.loop.run_until_complete(gather(*self.proxy_coroutines))
+        self.proxy_servers = self.loop.run_until_complete(
+            gather(*proxy_coroutines)
+        )
 
     def sync_biconnect_nodes_as_linked_list(self, nodes_list=None):
         """
@@ -189,7 +174,7 @@ class NodesHub:
         """
 
         # We have to wait until all the proxies are configured and listening
-        while len(self.proxy_tasks) + len(self.proxy_coroutines) < len(self.nodes):
+        while len(self.proxy_servers) < len(self.nodes):
             yield from asyncio_sleep(0)
 
         # We have to be sure that all the previous calls to connect_nodes have

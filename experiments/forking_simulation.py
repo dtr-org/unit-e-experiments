@@ -125,9 +125,7 @@ class ForkingSimulation:
         self.setup_nodes()
         self.start_nodes()
 
-        self.nodes_hub = NodesHub(
-            loop=self.loop, nodes=self.nodes, sync_setup=True
-        )
+        self.nodes_hub = NodesHub(loop=self.loop, nodes=self.nodes)
         self.nodes_hub.sync_start_proxies()
         self.nodes_hub.sync_connect_nodes(self.graph_edges)
 
