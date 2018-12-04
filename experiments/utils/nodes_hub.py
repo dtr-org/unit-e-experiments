@@ -29,6 +29,7 @@ from test_framework.util import p2p_port
 
 
 MSG_HEADER_LENGTH = 4 + 12 + 4 + 4
+VERSION_PORT_OFFSET = 4 + 8 + 8 + 26 + 8 + 16
 
 
 logger = getLogger('TestFramework.nodes_hub')
@@ -67,9 +68,10 @@ class NodesHub:
         self.node2node_delays: Dict[Tuple[int, int], float] = {}
 
         self.proxy_servers: List[AbstractServer] = []
-        self.sender2proxy_transports: Dict[Tuple[int, int], Transport] = {}
-
         self.relay_tasks: Dict[Tuple[int, int], Task] = {}
+        self.ports2node_map: Dict[int, int] = {}
+
+        self.sender2proxy_transports: Dict[Tuple[int, int], Transport] = {}
         self.proxy2receiver_transports: Dict[Tuple[int, int], Transport] = {}
 
         # Lock-like object used by NodesHub.connect_nodes
@@ -83,18 +85,18 @@ class NodesHub:
 
         It starts the nodes's proxies.
         """
-        proxy_coroutines = [
+        for node_id in range(len(self.nodes)):
+            self.ports2node_map[self.get_node_port(node_id)] = node_id
+            self.ports2node_map[self.get_proxy_port(node_id)] = node_id
+
+        self.proxy_servers = self.loop.run_until_complete(gather(*[
             self.loop.create_server(
                 protocol_factory=lambda: NodeProxy(hub_ref=self),
                 host=self.host,
-                port=self.get_proxy_port(i)
+                port=self.get_proxy_port(node_id)
             )
-            for i, node in enumerate(self.nodes)
-        ]
-
-        self.proxy_servers = self.loop.run_until_complete(
-            gather(*proxy_coroutines)
-        )
+            for node_id, node in enumerate(self.nodes)
+        ]))
 
     def sync_biconnect_nodes_as_linked_list(self, nodes_list=None):
         """
@@ -124,7 +126,8 @@ class NodesHub:
             gather(*[self.connect_nodes(i, j) for (i, j) in graph_edges])
         )
 
-    def get_node_port(self, node_idx):
+    @staticmethod
+    def get_node_port(node_idx):
         return p2p_port(node_idx)
 
     def get_proxy_port(self, node_idx):
@@ -236,6 +239,54 @@ class NodesHub:
             relay_coroutine
         )
 
+    def process_buffer(self, buffer, transport: Transport):
+        """
+        This function helps the hub to impersonate nodes by modifying 'version'
+        messages changing the "from" addresses.
+        """
+
+        # We do nothing until we have (magic + command + length + checksum)
+        while len(buffer) > MSG_HEADER_LENGTH:
+
+            # We only care about command & msglen
+            msglen = unpack("<i", buffer[4 + 12:4 + 12 + 4])[0]
+
+            # We wait until we have the full message
+            if len(buffer) < MSG_HEADER_LENGTH + msglen:
+                return
+
+            command = buffer[4:4 + 12].split(b'\x00', 1)[0]
+            logger.debug('Processing command %s' % str(command))
+
+            if b'version' == command:
+                msg = buffer[MSG_HEADER_LENGTH:MSG_HEADER_LENGTH + msglen]
+
+                node_port: int = unpack(
+                    '!H', msg[VERSION_PORT_OFFSET:VERSION_PORT_OFFSET + 2]
+                )[0]
+                if node_port != 0:
+                    proxy_port = self.get_proxy_port(self.ports2node_map[node_port])
+                else:
+                    proxy_port = 0  # The node is not listening for connections
+
+                msg = (
+                    msg[:VERSION_PORT_OFFSET] +
+                    pack('!H', proxy_port) +
+                    msg[VERSION_PORT_OFFSET + 2:]
+                )
+
+                msg_checksum = hash256(msg)[:4]  # Truncated double sha256
+                new_header = buffer[:MSG_HEADER_LENGTH - 4] + msg_checksum
+
+                transport.write(new_header + msg)
+            else:
+                # We pass an unaltered message
+                transport.write(buffer[:MSG_HEADER_LENGTH + msglen])
+
+            buffer = buffer[MSG_HEADER_LENGTH + msglen:]
+
+        return buffer
+
 
 class NodeProxy(Protocol):
     def __init__(self, hub_ref):
@@ -277,8 +328,7 @@ class NodeProxy(Protocol):
                 (repr(self.sender2receiver_pair), len(data))
             )
             self.recvbuf += data
-            self.recvbuf = process_buffer(
-                node_port=self.hub_ref.get_proxy_port(self.sender2receiver_pair[0]),
+            self.recvbuf = self.hub_ref.process_buffer(
                 buffer=self.recvbuf,
                 transport=self.hub_ref.proxy2receiver_transports[self.sender2receiver_pair]
             )
@@ -324,48 +374,7 @@ class ProxyRelay(Protocol):
                 (repr(self.sender2receiver_pair), len(data))
             )
             self.recvbuf += data
-            self.recvbuf = process_buffer(
-                node_port=self.hub_ref.get_proxy_port(self.sender2receiver_pair[1]),
+            self.recvbuf = self.hub_ref.process_buffer(
                 buffer=self.recvbuf,
                 transport=self.hub_ref.sender2proxy_transports[self.sender2receiver_pair]
             )
-
-
-def process_buffer(node_port, buffer, transport: Transport):
-    """
-    This function helps the hub to impersonate nodes by modifying 'version'
-    messages changing the "from" addresses.
-    """
-
-    # We do nothing until we have (magic + command + length + checksum)
-    while len(buffer) > MSG_HEADER_LENGTH:
-
-        # We only care about command & msglen, but not about messages correctness.
-        msglen = unpack("<i", buffer[4 + 12:4 + 12 + 4])[0]
-
-        # We wait until we have the full message
-        if len(buffer) < MSG_HEADER_LENGTH + msglen:
-            return
-
-        command = buffer[4:4 + 12].split(b'\x00', 1)[0]
-        logger.debug('Processing command %s' % str(command))
-
-        if b'version' == command:
-            msg = buffer[MSG_HEADER_LENGTH:MSG_HEADER_LENGTH + msglen]
-            msg = (
-                msg[:4 + 8 + 8 + 26 + (4 + 8 + 16)] +
-                pack('!H', node_port) +  # Injecting the proxy's port info
-                msg[4 + 8 + 8 + 26 + (4 + 8 + 16 + 2):]
-            )
-
-            msg_checksum = hash256(msg)[:4]  # That's a truncated double sha256
-            new_header = buffer[:MSG_HEADER_LENGTH - 4] + msg_checksum
-
-            transport.write(new_header + msg)
-        else:
-            # We pass an unaltered message
-            transport.write(buffer[:MSG_HEADER_LENGTH + msglen])
-
-        buffer = buffer[MSG_HEADER_LENGTH + msglen:]
-
-    return buffer
