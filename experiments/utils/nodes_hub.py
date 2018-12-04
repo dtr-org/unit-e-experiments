@@ -69,7 +69,7 @@ class NodesHub:
 
         self.proxy_servers: List[AbstractServer] = []
         self.relay_tasks: Dict[Tuple[int, int], Task] = {}
-        self.ports2node_map: Dict[int, int] = {}
+        self.ports2nodes_map: Dict[int, int] = {}
 
         self.sender2proxy_transports: Dict[Tuple[int, int], Transport] = {}
         self.proxy2receiver_transports: Dict[Tuple[int, int], Transport] = {}
@@ -86,8 +86,8 @@ class NodesHub:
         It starts the nodes's proxies.
         """
         for node_id in range(len(self.nodes)):
-            self.ports2node_map[self.get_node_port(node_id)] = node_id
-            self.ports2node_map[self.get_proxy_port(node_id)] = node_id
+            self.ports2nodes_map[self.get_node_port(node_id)] = node_id
+            self.ports2nodes_map[self.get_proxy_port(node_id)] = node_id
 
         self.proxy_servers = self.loop.run_until_complete(gather(*[
             self.loop.create_server(
@@ -265,7 +265,7 @@ class NodesHub:
                     '!H', msg[VERSION_PORT_OFFSET:VERSION_PORT_OFFSET + 2]
                 )[0]
                 if node_port != 0:
-                    proxy_port = self.get_proxy_port(self.ports2node_map[node_port])
+                    proxy_port = self.get_proxy_port(self.ports2nodes_map[node_port])
                 else:
                     proxy_port = 0  # The node is not listening for connections
 
