@@ -9,7 +9,6 @@ from asyncio import (
     AbstractEventLoop,
     Protocol,
     AbstractServer,
-    Task,
     Transport,
     gather,
     sleep as asyncio_sleep
@@ -69,11 +68,12 @@ class NodesHub:
         self.inbound_delays: Dict[int, float] = {}
 
         self.proxy_servers: List[AbstractServer] = []
-        self.relay_tasks: Dict[Tuple[int, int], Task] = {}
         self.ports2nodes_map: Dict[int, int] = {}
 
         # Lock-like object used by NodesHub.connect_nodes
         self.pending_connection: Optional[Tuple[int, int]] = None
+
+        self.state = 'constructed'
 
     def sync_start_proxies(self):
         """
@@ -97,6 +97,8 @@ class NodesHub:
             )
             for node_id, node in enumerate(self.nodes)
         ]))
+
+        self.state = 'started_proxies'
 
     def sync_biconnect_nodes_as_linked_list(self, nodes_list=None):
         """
@@ -127,8 +129,18 @@ class NodesHub:
         )
 
     def close(self):
+        if self.state in ['closing', 'closed']:
+            return
+        self.state = 'closing'
+        logger.info('Shutting down NodesHub instance')
+
         for server in self.proxy_servers:
             server.close()
+            if server.sockets is not None:
+                for socket in server.sockets:
+                    socket.close()
+
+        self.state = 'closed'
 
     @staticmethod
     def get_node_port(node_idx):
@@ -258,7 +270,7 @@ class ProxyInputConnection(Protocol):
         if self.hub_ref.pending_connection is not None:
             self.sender_id = self.hub_ref.pending_connection[0]
 
-        self.transport = transport
+        self.transport: Transport = transport
 
         self.transport.pause_reading()
         self.pause_writing()

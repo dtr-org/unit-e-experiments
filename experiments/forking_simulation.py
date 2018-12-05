@@ -26,7 +26,6 @@ import sys
 
 from asyncio import (
     AbstractEventLoop,
-    coroutine,
     sleep as asyncio_sleep,
     get_event_loop,
 )
@@ -40,7 +39,8 @@ from logging import (
 from os.path import (
     dirname,
     normpath,
-    realpath
+    realpath,
+    exists as path_exists
 )
 from random import sample
 from shutil import rmtree
@@ -149,20 +149,44 @@ class ForkingSimulation:
         self.loop.create_task(self.sample_forever())
         self.loop.run_until_complete(self.trigger_simulation_stop())
 
-    @coroutine
-    def trigger_simulation_stop(self):
-        yield from asyncio_sleep(self.simulation_time)
-        self.is_running = False
-        yield from asyncio_sleep(3 * self.sample_time)
+    def safe_run(self):
+        try:
+            self.run()
+        finally:
+            self.logger.info('Releasing resources')
 
-    @coroutine
-    def sample_forever(self):
+            if not self.results_file.closed:
+                self.results_file.close()
+            self.nodes_hub.close()
+            self.stop_nodes()
+            self.cleanup_directories()
+            self.loop.close()
+
+    async def trigger_simulation_stop(self):
+        await asyncio_sleep(self.simulation_time)
+        self.is_running = False
+        await asyncio_sleep(4 * self.sample_time)
+
+    async def sample_forever(self):
         self.logger.info('Starting sampling process')
 
         self.is_running = True
         while self.is_running:
-            yield from asyncio_sleep(self.sample_time)
+            await asyncio_sleep(self.sample_time)
             self.sample()
+
+        self.logger.info('Stopping sampling process')
+
+        # Although we have a sync method releasing resources, it's better to do
+        # it before stopping the loop execution to avoid leaving dangling tasks.
+        if not self.results_file.closed:
+            self.results_file.close()
+            await asyncio_sleep(0)
+        self.nodes_hub.close()
+        await asyncio_sleep(0)  # We yield control so other coroutines can end.
+        self.stop_nodes()
+        await asyncio_sleep(0)
+        self.cleanup_directories()
 
     def sample(self):
         sample_time = time()
@@ -182,25 +206,13 @@ class ForkingSimulation:
                 f'{tip_stats["valid-headers"]}, {tip_stats["headers-only"]}\n'
             ).encode())
 
-    def safe_run(self):
-        try:
-            self.run()
-        finally:
-            if not self.results_file.closed:
-                self.results_file.close()
-
-            self.stop_nodes()
-            self.cleanup_directories()
-            self.nodes_hub.close()
-            self.loop.close()
-
     def setup_directories(self):
         self.logger.info('Preparing temporary directories')
         self.tmp_dir = mkdtemp(prefix='simulation')
 
     def cleanup_directories(self):
-        self.logger.info('Cleaning temporary directories')
-        if self.tmp_dir != '':
+        if self.tmp_dir != '' and path_exists(self.tmp_dir):
+            self.logger.info('Cleaning temporary directories')
             rmtree(self.tmp_dir)
 
     def setup_chain(self):
@@ -295,7 +307,7 @@ def main():
     logging_config(
         stream=sys.stdout,
         level=INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
     )
 
     tf_util.MAX_NODES = 500  # has to be greater than 2n+2 where n = num_nodes
