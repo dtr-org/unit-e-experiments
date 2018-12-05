@@ -141,6 +141,9 @@ class NodesHub:
         return '%s:%s' % (self.host, self.get_proxy_port(node_idx))
 
     def set_nodes_delay(self, outbound_idx: int, inbound_idx: int, delay: float):
+        if outbound_idx is None or inbound_idx is None or delay is None:
+            raise ValueError('Parameters are not allowed to be None')
+
         if delay == 0:
             self.node2node_delays.pop((outbound_idx, inbound_idx), None)
         else:
@@ -295,10 +298,7 @@ class ProxyInputConnection(Protocol):
         ):  # This should not happen, just defensive programming
             await asyncio_sleep(0)
 
-        if (
-            self.sender_id is not None and
-            (self.sender_id, self.receiver_id) in self.hub_ref.node2node_delays
-        ):
+        if (self.sender_id, self.receiver_id) in self.hub_ref.node2node_delays:
             await asyncio_sleep(
                 self.hub_ref.node2node_delays[(self.sender_id, self.receiver_id)]
             )
@@ -358,10 +358,7 @@ class ProxyOutputConnection(Protocol):
         )
 
         # if self.receiver2sender_pair in self.hub_ref.node2node_delays:
-        if (
-            self.input_connection.sender_id is not None and
-            receiver2sender_pair in self.hub_ref.node2node_delays
-        ):
+        if receiver2sender_pair in self.hub_ref.node2node_delays:
             await asyncio_sleep(
                 self.hub_ref.node2node_delays[receiver2sender_pair]
             )
