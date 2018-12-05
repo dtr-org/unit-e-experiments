@@ -132,6 +132,7 @@ class ForkingSimulation:
         # Setting deterministic delays (for now), would be better to use random
         # delays following exponential dist.
         for i in range(self.num_nodes):
+            self.nodes_hub.set_inbound_delay(i, self.latency)
             for j in range(self.num_nodes):
                 self.nodes_hub.set_nodes_delay(i, j, self.latency)
 
