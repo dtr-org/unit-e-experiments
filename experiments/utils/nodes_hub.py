@@ -293,7 +293,7 @@ class ProxyInputConnection(Protocol):
             self.output_connection is None or
             self.output_connection.transport is None
         ):  # This should not happen, just defensive programming
-            await  asyncio_sleep(0)
+            await asyncio_sleep(0)
 
         if (
             self.sender_id is not None and
