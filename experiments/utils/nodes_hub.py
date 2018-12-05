@@ -66,13 +66,11 @@ class NodesHub:
 
         # This allows us to specify asymmetric delays
         self.node2node_delays: Dict[Tuple[int, int], float] = {}
+        self.inbound_delays: Dict[int, float] = {}
 
         self.proxy_servers: List[AbstractServer] = []
         self.relay_tasks: Dict[Tuple[int, int], Task] = {}
         self.ports2nodes_map: Dict[int, int] = {}
-
-        self.sender2proxy_transports: Dict[Tuple[int, int], Transport] = {}
-        self.proxy2receiver_transports: Dict[Tuple[int, int], Transport] = {}
 
         # Lock-like object used by NodesHub.connect_nodes
         self.pending_connection: Optional[Tuple[int, int]] = None
@@ -91,7 +89,9 @@ class NodesHub:
 
         self.proxy_servers = self.loop.run_until_complete(gather(*[
             self.loop.create_server(
-                protocol_factory=lambda: NodeProxy(hub_ref=self),
+                protocol_factory=lambda: ProxyInputConnection(
+                    hub_ref=self, node_id=node_id
+                ),
                 host=self.host,
                 port=self.get_proxy_port(node_id)
             )
@@ -126,6 +126,10 @@ class NodesHub:
             gather(*[self.connect_nodes(i, j) for (i, j) in graph_edges])
         )
 
+    def close(self):
+        for server in self.proxy_servers:
+            server.close()
+
     @staticmethod
     def get_node_port(node_idx):
         return p2p_port(node_idx)
@@ -136,37 +140,17 @@ class NodesHub:
     def get_proxy_address(self, node_idx):
         return '%s:%s' % (self.host, self.get_proxy_port(node_idx))
 
-    def set_nodes_delay(self, outbound_idx, inbound_idx, delay):
-        # delay is measured in seconds
+    def set_nodes_delay(self, outbound_idx: int, inbound_idx: int, delay: float):
         if delay == 0:
             self.node2node_delays.pop((outbound_idx, inbound_idx), None)
         else:
             self.node2node_delays[(outbound_idx, inbound_idx)] = delay
 
-    def disconnect_nodes(self, outbound_idx, inbound_idx):
-        sender2proxy_transport: Transport = self.sender2proxy_transports.get(
-            (outbound_idx, inbound_idx), None
-        )
-        proxy2receiver_transport: Transport = self.proxy2receiver_transports.get(
-            (outbound_idx, inbound_idx), None
-        )
-        relay_task: Task = self.relay_tasks.get(
-            (outbound_idx, inbound_idx), None
-        )
-
-        if sender2proxy_transport is not None and not sender2proxy_transport.is_closing():
-            sender2proxy_transport.close()
-
-        if proxy2receiver_transport is not None and not proxy2receiver_transport.is_closing():
-            proxy2receiver_transport.close()
-
-        if relay_task is not None and not relay_task.cancelled():
-            relay_task.cancel()
-
-        # Removing references
-        self.sender2proxy_transports.pop((outbound_idx, inbound_idx), None)
-        self.proxy2receiver_transports.pop((outbound_idx, inbound_idx), None)
-        self.relay_tasks.pop((outbound_idx, inbound_idx), None)
+    def set_inbound_delay(self, inbound_idx: int, delay: float):
+        if delay == 0:
+            self.inbound_delays.pop(inbound_idx, None)
+        else:
+            self.inbound_delays[inbound_idx] = delay
 
     async def connect_nodes(self, outbound_idx: int, inbound_idx: int):
         """
@@ -187,27 +171,11 @@ class NodesHub:
         # We acquire the lock. This tuple is also useful for the NodeProxy
         # instance.
         self.pending_connection = (outbound_idx, inbound_idx)
-
-        if (
-                self.pending_connection in self.sender2proxy_transports or
-                self.pending_connection in self.proxy2receiver_transports
-        ):
-            raise RuntimeError(
-                'Connection (node%s --> node%s) already established' %
-                self.pending_connection[:]
-            )
-
         self.connect_sender_to_proxy(*self.pending_connection)
-        self.connect_proxy_to_receiver(*self.pending_connection)
 
         # We wait until we know that all the connections have been created
-        while (
-                self.pending_connection not in self.sender2proxy_transports or
-                self.pending_connection not in self.proxy2receiver_transports
-        ):
+        while self.pending_connection is not None:
             await asyncio_sleep(0)
-
-        self.pending_connection = None  # We release the lock
 
     def connect_sender_to_proxy(self, outbound_idx, inbound_idx):
         """
@@ -219,25 +187,8 @@ class NodesHub:
 
         # Add the proxy to the outgoing connections list
         sender_node.addnode(proxy_address, 'add')
-        # Connect to the proxy. Will trigger NodeProxy.connection_made
+        # Connect to proxy. Will trigger ProxyInputConnection.connection_made
         sender_node.addnode(proxy_address, 'onetry')
-
-    def connect_proxy_to_receiver(self, outbound_idx, inbound_idx):
-        """
-        Creates a sender that connects to a node and relays messages between
-        that node and its associated proxy
-        """
-
-        relay_coroutine = self.loop.create_connection(
-            protocol_factory=lambda c2sp=self.pending_connection: ProxyRelay(
-                hub_ref=self, sender2receiver_pair=c2sp
-            ),
-            host=self.host,
-            port=self.get_node_port(inbound_idx)
-        )
-        self.relay_tasks[(outbound_idx, inbound_idx)] = self.loop.create_task(
-            relay_coroutine
-        )
 
     def process_buffer(self, buffer, transport: Transport):
         """
@@ -288,93 +239,144 @@ class NodesHub:
         return buffer
 
 
-class NodeProxy(Protocol):
-    def __init__(self, hub_ref):
+class ProxyInputConnection(Protocol):
+    def __init__(self, hub_ref: NodesHub, node_id: int):
         self.hub_ref = hub_ref
-        self.sender2receiver_pair = None
+        self.receiver_id = node_id
+
+        self.sender_id: Optional[int] = None
+
+        self.transport: Optional[Transport] = None
+        self.output_connection: Optional[ProxyOutputConnection] = None
+
         self.recvbuf = b''
 
     def connection_made(self, transport):
-        self.sender2receiver_pair = self.hub_ref.pending_connection
+        if self.hub_ref.pending_connection is not None:
+            self.sender_id = self.hub_ref.pending_connection[0]
 
-        logger.debug(
-            'Client %s connected to proxy %s' % self.sender2receiver_pair[:]
+        self.transport = transport
+
+        self.transport.pause_reading()
+        self.pause_writing()
+
+        proxy_output_coroutine = self.hub_ref.loop.create_connection(
+            protocol_factory=lambda: ProxyOutputConnection(
+                input_connection=self
+            ),
+            host=self.hub_ref.host,
+            port=self.hub_ref.get_node_port(self.receiver_id)
         )
-        self.hub_ref.sender2proxy_transports[self.sender2receiver_pair] = transport
+        self.hub_ref.loop.create_task(proxy_output_coroutine)
+
+        logger.debug(f'''Created proxy input connection {(
+            self.sender_id,
+            self.receiver_id
+        )}''')
 
     def connection_lost(self, exc):
-        logger.debug(
-            'Lost connection between sender %s and proxy %s' %
-            self.sender2receiver_pair[:]
-        )
-        self.hub_ref.disconnect_nodes(*self.sender2receiver_pair)
+        if not self.transport.is_closing():
+            self.transport.close()
+        if not self.output_connection.transport.is_closing():
+            self.output_connection.transport.close()
+
+        logger.debug(f'''Lost proxy input connection {(
+            self.sender_id,
+            self.receiver_id
+        )}''')
 
     def data_received(self, data):
         self.hub_ref.loop.create_task(self.__handle_received_data(data))
 
     async def __handle_received_data(self, data):
-        while self.sender2receiver_pair not in self.hub_ref.proxy2receiver_transports:
-            # We can't relay the data yet, we need a connection on the other side
-            await asyncio_sleep(0)
+        while (
+            self.output_connection is None or
+            self.output_connection.transport is None
+        ):  # This should not happen, just defensive programming
+            await  asyncio_sleep(0)
 
-        if self.sender2receiver_pair in self.hub_ref.node2node_delays:
+        if (
+            self.sender_id is not None and
+            (self.sender_id, self.receiver_id) in self.hub_ref.node2node_delays
+        ):
             await asyncio_sleep(
-                self.hub_ref.node2node_delays[self.sender2receiver_pair]
+                self.hub_ref.node2node_delays[(self.sender_id, self.receiver_id)]
             )
+        elif self.receiver_id in self.hub_ref.inbound_delays:
+            await asyncio_sleep(self.hub_ref.inbound_delays[self.receiver_id])
 
         if len(data) > 0:
             logger.debug(
-                'Proxy connection %s received %s bytes' %
-                (repr(self.sender2receiver_pair), len(data))
+                f'Proxy input connection {(self.sender_id, self.receiver_id)} '
+                f'received {len(data)} bytes'
             )
             self.recvbuf += data
             self.recvbuf = self.hub_ref.process_buffer(
                 buffer=self.recvbuf,
-                transport=self.hub_ref.proxy2receiver_transports[self.sender2receiver_pair]
+                transport=self.output_connection.transport
             )
 
 
-class ProxyRelay(Protocol):
-    def __init__(self, hub_ref, sender2receiver_pair):
-        self.hub_ref = hub_ref
-        self.sender2receiver_pair = sender2receiver_pair
-        self.receiver2sender_pair = sender2receiver_pair[::-1]
+class ProxyOutputConnection(Protocol):
+    def __init__(self, input_connection: ProxyInputConnection):
+        self.input_connection = input_connection
+        self.hub_ref = input_connection.hub_ref
+        self.transport: Optional[Transport] = None
+
         self.recvbuf = b''
+        input_connection.output_connection = self
 
     def connection_made(self, transport):
-        logger.debug(
-            'Created connection between proxy and its associated node %s to receive messages from node %s' %
-            self.receiver2sender_pair
-        )
-        self.hub_ref.proxy2receiver_transports[self.sender2receiver_pair] = transport
+        self.transport = transport
+
+        self.input_connection.transport.resume_reading()
+        self.input_connection.resume_writing()
+        self.hub_ref.pending_connection = None  # We release the lock
+
+        logger.debug(f'''Created proxy output connection {(
+            self.input_connection.sender_id,
+            self.input_connection.receiver_id
+        )}''')
 
     def connection_lost(self, exc):
-        logger.debug(
-            'Lost connection between proxy and its associated node %s to receive messages from node %s' %
-            self.receiver2sender_pair
-        )
-        self.hub_ref.disconnect_nodes(*self.sender2receiver_pair)
+        if not self.transport.is_closing():
+            self.transport.close()
+        if not self.input_connection.transport.is_closing():
+            self.input_connection.transport.close()
+
+        logger.debug(f'''Lost proxy output connection {(
+            self.input_connection.sender_id,
+            self.input_connection.receiver_id
+        )}''')
 
     def data_received(self, data):
         self.hub_ref.loop.create_task(self.__handle_received_data(data))
 
     async def __handle_received_data(self, data):
-        while self.sender2receiver_pair not in self.hub_ref.sender2proxy_transports:
-            # We can't relay the data yet, we need a connection on the other side
-            await asyncio_sleep(0)
+        receiver2sender_pair = (
+            self.input_connection.receiver_id, self.input_connection.sender_id
+        )
 
-        if self.receiver2sender_pair in self.hub_ref.node2node_delays:
+        # if self.receiver2sender_pair in self.hub_ref.node2node_delays:
+        if (
+            self.input_connection.sender_id is not None and
+            receiver2sender_pair in self.hub_ref.node2node_delays
+        ):
             await asyncio_sleep(
-                self.hub_ref.node2node_delays[self.receiver2sender_pair]
+                self.hub_ref.node2node_delays[receiver2sender_pair]
+            )
+        elif self.input_connection.sender_id in self.hub_ref.inbound_delays:
+            await asyncio_sleep(
+                self.hub_ref.inbound_delays[self.input_connection.sender_id]
             )
 
         if len(data) > 0:
             logger.debug(
-                'Proxy relay connection %s received %s bytes' %
-                (repr(self.sender2receiver_pair), len(data))
+                f'Proxy output connection {receiver2sender_pair[::-1]} '
+                f'received {len(data)} bytes'
             )
             self.recvbuf += data
             self.recvbuf = self.hub_ref.process_buffer(
                 buffer=self.recvbuf,
-                transport=self.hub_ref.sender2proxy_transports[self.sender2receiver_pair]
+                transport=self.input_connection.transport
             )

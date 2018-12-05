@@ -190,6 +190,7 @@ class ForkingSimulation:
 
             self.stop_nodes()
             self.cleanup_directories()
+            self.nodes_hub.close()
             self.loop.close()
 
     def setup_directories(self):
