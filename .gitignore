@@ -1,9 +1,11 @@
-# Simulation related
+# Pipenv related
 Pipfile.lock
-settings.py
+
+# Simulation related
 cache/
 *.csv
 *.dat
+*.log
 wallet.dat*
 
 # Environment
