@@ -45,10 +45,15 @@ async def test_get_pid_for_tcp_connection_port(
     assert (getpid() == client_pid)
 
     # Asserting that we can filter by the correct type connection
-    error_msg = 'Found PID but the status did not match'
-    with pytest.raises(RuntimeError, match=error_msg):
+    with pytest.raises(
+        expected_exception=RuntimeError,
+        match=r'Found PID with status mismatch \(CLOSED not in \[\'ESTABLISHED\', \'LISTEN\'\]\)'
+    ):
         get_pid_for_local_port(port=listening_port, status='CLOSED')
-    with pytest.raises(RuntimeError, match=error_msg):
+    with pytest.raises(
+        expected_exception=RuntimeError,
+        match=r'Found PID with status mismatch \(LISTEN not in \[\'ESTABLISHED\'\]\)'
+    ):
         get_pid_for_local_port(port=client_port, status='LISTEN')
 
     client_socket.close()

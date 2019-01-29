@@ -15,21 +15,24 @@ def get_pid_for_local_port(
         enforce_host: Optional[str] = '127.0.0.1',
         status: Optional[str] = 'ESTABLISHED'
 ) -> int:
-    all_connections = net_connections()
+    all_connections = net_connections(kind='tcp4')
 
-    not_expected_status = False
+    found_status = []
     for connection in all_connections:
         if port != connection.laddr[1]:
             continue
         if enforce_host is not None and enforce_host != connection.laddr[0]:
             continue
         if status is not None and status != connection.status:
-            not_expected_status = True
+            found_status.append(connection.status)
             continue
 
         return connection.pid
 
-    if not_expected_status:
-        raise RuntimeError('Found PID but the status did not match')
+    if len(found_status) > 0:
+        raise RuntimeError(
+            'Found PID with status mismatch '
+            f'({status} not in {sorted(found_status)})'
+        )
     else:
         raise RuntimeError('Unable to find associated PID')

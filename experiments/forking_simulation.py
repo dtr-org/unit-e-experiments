@@ -33,7 +33,8 @@ from collections import defaultdict
 from io import BytesIO
 from logging import (
     INFO,
-    basicConfig as logging_config,
+    WARNING,
+    basicConfig as loggingBasicConfig,
     getLogger
 )
 from os.path import (
@@ -61,6 +62,7 @@ from experiments.utils.graph import (
     create_directed_graph,
 )
 from experiments.utils.nodes_hub import NodesHub
+from experiments.utils.latencies import StaticLatencyPolicy
 from test_framework.regtest_mnemonics import regtest_mnemonics
 from test_framework.test_node import TestNode
 from test_framework.util import initialize_datadir
@@ -125,16 +127,13 @@ class ForkingSimulation:
         self.setup_nodes()
         self.start_nodes()
 
-        self.nodes_hub = NodesHub(loop=self.loop, nodes=self.nodes)
+        self.nodes_hub = NodesHub(
+            loop=self.loop,
+            latency_policy=StaticLatencyPolicy(self.latency),
+            nodes=self.nodes
+        )
         self.nodes_hub.sync_start_proxies()
         self.nodes_hub.sync_connect_nodes(self.graph_edges)
-
-        # Setting deterministic delays (for now), would be better to use random
-        # delays following exponential dist.
-        for i in range(self.num_nodes):
-            self.nodes_hub.set_inbound_delay(i, self.latency)
-            for j in range(self.num_nodes):
-                self.nodes_hub.set_nodes_delay(i, j, self.latency)
 
         # Loading wallets... only for proposers (which are picked randomly)
         for idx, proposer_id in enumerate(self.proposer_node_ids):
@@ -177,17 +176,6 @@ class ForkingSimulation:
 
         self.logger.info('Stopping sampling process')
 
-        # Although we have a sync method releasing resources, it's better to do
-        # it before stopping the loop execution to avoid leaving dangling tasks.
-        if not self.results_file.closed:
-            self.results_file.close()
-            await asyncio_sleep(0)
-        self.nodes_hub.close()
-        await asyncio_sleep(0)  # We yield control so other coroutines can end.
-        self.stop_nodes()
-        await asyncio_sleep(0)
-        self.cleanup_directories()
-
     def sample(self):
         sample_time = time()
         time_delta = sample_time - self.start_time
@@ -209,6 +197,7 @@ class ForkingSimulation:
     def setup_directories(self):
         self.logger.info('Preparing temporary directories')
         self.tmp_dir = mkdtemp(prefix='simulation')
+        self.logger.info(f'Nodes logs are in {self.tmp_dir}')
 
     def cleanup_directories(self):
         if self.tmp_dir != '' and path_exists(self.tmp_dir):
@@ -304,11 +293,12 @@ class ForkingSimulation:
 
 
 def main():
-    logging_config(
+    loggingBasicConfig(
         stream=sys.stdout,
         level=INFO,
         format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
     )
+    getLogger('asyncio').setLevel(WARNING)
 
     tf_util.MAX_NODES = 500  # has to be greater than 2n+2 where n = num_nodes
     tf_util.PortSeed.n = 314159
@@ -317,8 +307,8 @@ def main():
     simulation = ForkingSimulation(
         loop=get_event_loop(),
         latency=0,
-        num_proposer_nodes=20,
-        num_relay_nodes=180,
+        num_proposer_nodes=5,
+        num_relay_nodes=45,
         simulation_time=120,
         sample_time=1,
         sample_size=10,
