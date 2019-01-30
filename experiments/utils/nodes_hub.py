@@ -222,7 +222,7 @@ class NodesHub:
                 'Some unexpected connections were established '
                 f'({self.num_unexpected_connections})'
             )
-        if len(self.pending_connections) - self.num_unexpected_connections < 0:
+        if self.num_unexpected_connections - len(self.pending_connections) > 0:
             logger.warning('The simulated network is bigger than intended')
 
         logger.info('All pending connections have been established')
@@ -456,10 +456,15 @@ class ProxyOutputConnection(Protocol):
         )}''')
 
     def connection_lost(self, exc):
-        if not self.transport.is_closing():
-            self.transport.close()
-        if not self.input_connection.transport.is_closing():
-            self.input_connection.transport.close()
+        if self.transport is not None:
+            if not self.transport.is_closing():
+                self.transport.close()
+            if not self.input_connection.transport.is_closing():
+                self.input_connection.transport.close()
+        else:
+            logger.warning(
+                f'ProxyOutputConnection {self.id}: connection_lost (too early)'
+            )
 
         logger.debug(f'''ProxyOutputConnection {self.id}: connection_lost {(
             self.input_connection.sender_id,
