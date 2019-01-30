@@ -357,10 +357,19 @@ class ProxyInputConnection(Protocol):
         )}''')
 
     def connection_lost(self, exc):
-        if not self.transport.is_closing():
-            self.transport.close()
-        if not self.output_connection.transport.is_closing():
-            self.output_connection.transport.close()
+        if self.transport is not None:
+            if not self.transport.is_closing():
+                self.transport.close()
+            if (
+                    self.output_connection is not None and
+                    self.output_connection.transport is not None and
+                    not self.output_connection.transport.is_closing()
+            ):
+                self.output_connection.transport.close()
+        else:
+            logger.warning(
+                f'ProxyInputConnection {self.id}: connection_lost (too early)'
+            )
 
         logger.debug(f'''ProxyInputConnection {self.id}: connection_lost {(
             self.sender_id,
