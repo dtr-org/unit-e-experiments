@@ -61,7 +61,10 @@ from experiments.utils.graph import (
     ensure_one_inbound_connection_per_node,
     create_directed_graph,
 )
-from experiments.utils.nodes_hub import NodesHub
+from experiments.utils.nodes_hub import (
+    NodesHub,
+    NUM_OUTBOUND_CONNECTIONS
+)
 from experiments.utils.latencies import StaticLatencyPolicy
 from test_framework.regtest_mnemonics import regtest_mnemonics
 from test_framework.test_node import TestNode
@@ -272,7 +275,7 @@ class ForkingSimulation:
 
         graph_edges, inbound_degrees = create_directed_graph(
             num_nodes=self.num_nodes,
-            num_outbound_connections=8,
+            num_outbound_connections=NUM_OUTBOUND_CONNECTIONS,
             max_inbound_connections=125,
             model=self.graph_model
         )

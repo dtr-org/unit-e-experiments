@@ -32,6 +32,7 @@ from test_framework.messages import hash256
 from test_framework.test_node import TestNode
 from test_framework.util import p2p_port
 
+NUM_OUTBOUND_CONNECTIONS = 8
 MSG_HEADER_LENGTH = 4 + 12 + 4 + 4
 VERSION_PORT_OFFSET = 4 + 8 + 8 + 26 + 8 + 16
 
@@ -196,7 +197,7 @@ class NodesHub:
     async def wait_for_pending_connections(self):
         # The first time we give some margin to the other coroutines so they can
         # start adding pending connections.
-        while self.num_connection_intents < len(self.nodes) * 8:
+        while self.num_connection_intents < len(self.nodes) * NUM_OUTBOUND_CONNECTIONS:
             await asyncio_sleep(0.005)
 
         # We wait until we know that all the connections have been created
