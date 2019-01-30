@@ -23,5 +23,5 @@ def test_static_latency_policy():
     latency_policy.set_delay(src_node=3, dst_node=4, delay=None)
     latency_policy.set_delay(src_node=4, dst_node=3, delay=None)
 
-    latency_policy.set_delay(src_node=3, dst_node=4, delay=42)
-    latency_policy.set_delay(src_node=4, dst_node=3, delay=42)
+    assert (latency_policy.get_delay(src_node=3, dst_node=4) == 42)
+    assert (latency_policy.get_delay(src_node=4, dst_node=3) == 42)
