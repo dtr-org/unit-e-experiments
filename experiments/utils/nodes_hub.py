@@ -86,6 +86,10 @@ class NodesHub:
         self.num_unexpected_connections = 0
 
     def sync_start_proxies(self):
+        """Sync wrapper around start_proxies"""
+        self.loop.run_until_complete(self.start_proxies())
+
+    async def start_proxies(self):
         """
         This method creates (& starts) a listener proxy for each node, the
         connections from each proxy to the real node that they represent will be
@@ -97,7 +101,7 @@ class NodesHub:
             self.ports2nodes_map[self.get_node_port(node_id)] = node_id
             self.ports2nodes_map[self.get_proxy_port(node_id)] = node_id
 
-        self.proxy_servers = self.loop.run_until_complete(gather(*[
+        self.proxy_servers = await gather(*[
             self.loop.create_server(
                 protocol_factory=ProxyInputConnection.deferred_constructor(
                     hub_ref=self, node_id=node_id
@@ -106,7 +110,7 @@ class NodesHub:
                 port=self.get_proxy_port(node_id)
             )
             for node_id, node in enumerate(self.nodes)
-        ]))
+        ])
 
         self.state = 'started_proxies'
 
