@@ -26,7 +26,7 @@ from typing import (
     Union
 )
 
-from experiments.utils.latencies import StaticLatencyPolicy
+from experiments.utils.latencies import LatencyPolicy
 from experiments.utils.networking import get_pid_for_local_port
 from test_framework.messages import hash256
 from test_framework.test_node import TestNode
@@ -63,7 +63,7 @@ class NodesHub:
     def __init__(
             self,
             loop: AbstractEventLoop,
-            latency_policy: StaticLatencyPolicy,
+            latency_policy: LatencyPolicy,
             nodes: List[TestNode],
             host: str = '127.0.0.1'
     ):
