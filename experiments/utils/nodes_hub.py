@@ -78,6 +78,8 @@ class NodesHub:
 
         self.pending_connections: Set[Tuple[int, int]] = set()
         self.state = 'constructed'
+
+        self.num_connection_intents = 0
         self.num_unexpected_connections = 0
 
     def sync_start_proxies(self):
@@ -116,13 +118,12 @@ class NodesHub:
         if 0 == len(nodes_list):
             return
 
-        connection_futures = []
+        connection_futures = [self.wait_for_pending_connections()]
 
         for i, j in zip(nodes_list, nodes_list[1:]):
             connection_futures.append(self.connect_nodes(i, j))
             connection_futures.append(self.connect_nodes(j, i))
 
-        connection_futures.append(self.wait_for_pending_connections())
         self.loop.run_until_complete(gather(*connection_futures))
 
     def sync_connect_nodes(self, graph_edges: set):
@@ -187,6 +188,7 @@ class NodesHub:
             self.pending_connections.add((outbound_idx, inbound_idx))
             # Add the proxy to the outgoing connections list
             sender_node.addnode(proxy_address, 'add')
+            self.num_connection_intents += 1
 
         # Connect to proxy. Will trigger ProxyInputConnection.connection_made
         sender_node.addnode(proxy_address, 'onetry')
@@ -194,12 +196,13 @@ class NodesHub:
     async def wait_for_pending_connections(self):
         # The first time we give some margin to the other coroutines so they can
         # start adding pending connections.
-        await asyncio_sleep(0.05)
+        while self.num_connection_intents < len(self.nodes) * 8:
+            await asyncio_sleep(0.005)
 
         # We wait until we know that all the connections have been created
         while len(self.pending_connections) - self.num_unexpected_connections > 0:
             logger.debug(
-                'Remaining connections to be fully stablished: '
+                'Remaining connections to be fully established: '
                 f'{len(self.pending_connections)} '
             )
 
