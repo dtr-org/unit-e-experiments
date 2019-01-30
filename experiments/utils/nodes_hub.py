@@ -161,7 +161,7 @@ class NodesHub:
         return p2p_port(len(self.nodes) + 1 + node_idx)
 
     def get_proxy_address(self, node_idx):
-        return '%s:%s' % (self.host, self.get_proxy_port(node_idx))
+        return f'{self.host}:{self.get_proxy_port(node_idx)}'
 
     async def connect_nodes(self, outbound_idx: int, inbound_idx: int):
         """
