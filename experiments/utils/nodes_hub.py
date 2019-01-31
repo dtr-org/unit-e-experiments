@@ -33,6 +33,8 @@ from test_framework.test_node import TestNode
 from test_framework.util import p2p_port
 
 NUM_OUTBOUND_CONNECTIONS = 8
+NUM_INBOUND_CONNECTIONS = 125
+
 MSG_HEADER_LENGTH = 4 + 12 + 4 + 4
 VERSION_PORT_OFFSET = 4 + 8 + 8 + 26 + 8 + 16
 
