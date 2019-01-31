@@ -115,10 +115,13 @@ class NodesHub:
         self.state = 'started_proxies'
 
     def sync_biconnect_nodes_as_linked_list(self, nodes_list=None):
-        """
-        Helper to make easier using NodesHub in non-asyncio aware code.
-        Connects nodes as a linked list.
-        """
+        """Sync wrapper around biconnect_nodes_as_linked_list"""
+        self.loop.run_until_complete(self.biconnect_nodes_as_linked_list(
+            nodes_list
+        ))
+
+    async def biconnect_nodes_as_linked_list(self, nodes_list=None):
+        """Connects nodes as a linked list."""
         if nodes_list is None:
             nodes_list = range(len(self.nodes))
 
@@ -131,17 +134,21 @@ class NodesHub:
             connection_futures.append(self.connect_nodes(i, j))
             connection_futures.append(self.connect_nodes(j, i))
 
-        self.loop.run_until_complete(gather(*connection_futures))
+        await gather(*connection_futures)
 
-    def sync_connect_nodes(self, graph_edges: set):
+    def sync_connect_nodes_graph(self, graph_edges: set):
+        """Sync wrapper around connect_nodes_graph"""
+        self.loop.run_until_complete(self.connect_nodes_graph(graph_edges))
+
+    async def connect_nodes_graph(self, graph_edges: set):
         """
-        Helper to make easier using NodesHub in non-asyncio aware code. Allows
-        to setup a network given an arbitrary graph (in the form of edges set).
+        Allows to setup a network given an arbitrary graph (in the form of edges
+        set).
         """
-        self.loop.run_until_complete(gather(*(
+        await gather(*(
             [self.connect_nodes(i, j) for (i, j) in graph_edges] +
             [self.wait_for_pending_connections()]
-        )))
+        ))
 
     def close(self):
         if self.state in ['closing', 'closed']:

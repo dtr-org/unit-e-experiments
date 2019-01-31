@@ -113,6 +113,62 @@ async def test_wait_for_pending_connections(event_loop: AbstractEventLoop):
         nodes_hub.close()
 
 
+@pytest.mark.asyncio
+async def test_biconnect_nodes_as_linked_list(event_loop: AbstractEventLoop):
+    init_environment()
+
+    with patch(
+        target='experiments.utils.nodes_hub.NodesHub.connect_nodes',
+        new=CoroutineMock(spec=NodesHub.connect_nodes)
+    ) as fake_connect_nodes, patch(
+        target='experiments.utils.nodes_hub.NodesHub.wait_for_pending_connections',
+        new=CoroutineMock(spec=NodesHub.wait_for_pending_connections)
+    ) as fake_wait_for_pending_connections:
+        nodes_hub = NodesHub(
+            loop=event_loop,
+            latency_policy=Mock(spec=LatencyPolicy),
+            nodes=[get_node_mock(node_id) for node_id in range(5)]
+        )
+        await nodes_hub.biconnect_nodes_as_linked_list()  # SUT
+
+        # 5 nodes as a list give us 4 edges, with 2 directions => 8 calls
+        assert (8 == fake_connect_nodes.await_count)
+
+        # We assert that we try to wait for pending connections
+        fake_wait_for_pending_connections.assert_awaited()
+
+        nodes_hub.close()
+
+
+@pytest.mark.asyncio
+async def test_connect_nodes_graph(event_loop: AbstractEventLoop):
+    init_environment()
+
+    graph_edges = {(0, 1), (1, 3), (3, 4), (4, 0)}
+
+    with patch(
+            target='experiments.utils.nodes_hub.NodesHub.connect_nodes',
+            new=CoroutineMock(spec=NodesHub.connect_nodes)
+    ) as fake_connect_nodes, patch(
+        target='experiments.utils.nodes_hub.NodesHub.wait_for_pending_connections',
+        new=CoroutineMock(spec=NodesHub.wait_for_pending_connections)
+    ) as fake_wait_for_pending_connections:
+        nodes_hub = NodesHub(
+            loop=event_loop,
+            latency_policy=Mock(spec=LatencyPolicy),
+            nodes=[get_node_mock(node_id) for node_id in range(5)]
+        )
+        await nodes_hub.connect_nodes_graph(graph_edges)  # SUT
+
+        # We call connect_nodes 1 time per graph edge
+        assert (4 == fake_connect_nodes.await_count)
+
+        # We assert that we try to wait for pending connections
+        fake_wait_for_pending_connections.assert_awaited()
+
+        nodes_hub.close()
+
+
 def init_environment():
     # Sadly, we have to touch this almost-global properties to make things work
     tf_util.MAX_NODES = 500

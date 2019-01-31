@@ -137,7 +137,7 @@ class ForkingSimulation:
             nodes=self.nodes
         )
         self.nodes_hub.sync_start_proxies()
-        self.nodes_hub.sync_connect_nodes(self.graph_edges)
+        self.nodes_hub.sync_connect_nodes_graph(self.graph_edges)
 
         # Loading wallets... only for proposers (which are picked randomly)
         for idx, proposer_id in enumerate(self.proposer_node_ids):
