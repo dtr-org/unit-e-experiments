@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright (c) 2018 The Unit-e developers
+# Copyright (c) 2018-2019 The Unit-e developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -14,18 +14,26 @@ from asyncio import (
     sleep as asyncio_sleep
 )
 from logging import getLogger
+from socket import socket as socket_cls
 from struct import pack, unpack
 from typing import (
+    Callable,
     Dict,
     List,
     Optional,
-    Tuple
+    Set,
+    Tuple,
+    Union
 )
 
+from experiments.utils.latencies import StaticLatencyPolicy
+from experiments.utils.networking import get_pid_for_local_port
 from test_framework.messages import hash256
 from test_framework.test_node import TestNode
 from test_framework.util import p2p_port
 
+NUM_OUTBOUND_CONNECTIONS = 8
+NUM_INBOUND_CONNECTIONS = 125
 
 MSG_HEADER_LENGTH = 4 + 12 + 4 + 4
 VERSION_PORT_OFFSET = 4 + 8 + 8 + 26 + 8 + 16
@@ -55,25 +63,27 @@ class NodesHub:
     def __init__(
             self,
             loop: AbstractEventLoop,
+            latency_policy: StaticLatencyPolicy,
             nodes: List[TestNode],
             host: str = '127.0.0.1'
     ):
         self.loop = loop
+        self.latency_policy = latency_policy
         self.nodes = nodes
+        self.pid2node_id: Dict[int, int] = {
+            node.process.pid: node_id for node_id, node in enumerate(self.nodes)
+        }
 
         self.host = host
-
-        # This allows us to specify asymmetric delays
-        self.node2node_delays: Dict[Tuple[int, int], float] = {}
-        self.inbound_delays: Dict[int, float] = {}
 
         self.proxy_servers: List[AbstractServer] = []
         self.ports2nodes_map: Dict[int, int] = {}
 
-        # Lock-like object used by NodesHub.connect_nodes
-        self.pending_connection: Optional[Tuple[int, int]] = None
-
+        self.pending_connections: Set[Tuple[int, int]] = set()
         self.state = 'constructed'
+
+        self.num_connection_intents = 0
+        self.num_unexpected_connections = 0
 
     def sync_start_proxies(self):
         """
@@ -89,7 +99,7 @@ class NodesHub:
 
         self.proxy_servers = self.loop.run_until_complete(gather(*[
             self.loop.create_server(
-                protocol_factory=lambda: ProxyInputConnection(
+                protocol_factory=ProxyInputConnection.deferred_constructor(
                     hub_ref=self, node_id=node_id
                 ),
                 host=self.host,
@@ -111,7 +121,7 @@ class NodesHub:
         if 0 == len(nodes_list):
             return
 
-        connection_futures = []
+        connection_futures = [self.wait_for_pending_connections()]
 
         for i, j in zip(nodes_list, nodes_list[1:]):
             connection_futures.append(self.connect_nodes(i, j))
@@ -124,9 +134,10 @@ class NodesHub:
         Helper to make easier using NodesHub in non-asyncio aware code. Allows
         to setup a network given an arbitrary graph (in the form of edges set).
         """
-        self.loop.run_until_complete(
-            gather(*[self.connect_nodes(i, j) for (i, j) in graph_edges])
-        )
+        self.loop.run_until_complete(gather(*(
+            [self.connect_nodes(i, j) for (i, j) in graph_edges] +
+            [self.wait_for_pending_connections()]
+        )))
 
     def close(self):
         if self.state in ['closing', 'closed']:
@@ -152,21 +163,6 @@ class NodesHub:
     def get_proxy_address(self, node_idx):
         return '%s:%s' % (self.host, self.get_proxy_port(node_idx))
 
-    def set_nodes_delay(self, outbound_idx: int, inbound_idx: int, delay: float):
-        if outbound_idx is None or inbound_idx is None or delay is None:
-            raise ValueError('Parameters are not allowed to be None')
-
-        if delay == 0:
-            self.node2node_delays.pop((outbound_idx, inbound_idx), None)
-        else:
-            self.node2node_delays[(outbound_idx, inbound_idx)] = delay
-
-    def set_inbound_delay(self, inbound_idx: int, delay: float):
-        if delay == 0:
-            self.inbound_delays.pop(inbound_idx, None)
-        else:
-            self.inbound_delays[inbound_idx] = delay
-
     async def connect_nodes(self, outbound_idx: int, inbound_idx: int):
         """
         :param outbound_idx: Refers the "sender" (asking for a new connection)
@@ -177,35 +173,66 @@ class NodesHub:
         while len(self.proxy_servers) < len(self.nodes):
             await asyncio_sleep(0)
 
-        # We have to be sure that all the previous calls to connect_nodes have
-        # finished. Because we are using cooperative scheduling we don't have to
-        # worry about race conditions, this while loop is enough.
-        while self.pending_connection is not None:
-            await asyncio_sleep(0)
+        await self.connect_sender_to_proxy(outbound_idx, inbound_idx)
 
-        # We acquire the lock. This tuple is also useful for the NodeProxy
-        # instance.
-        self.pending_connection = (outbound_idx, inbound_idx)
-        self.connect_sender_to_proxy(*self.pending_connection)
-
-        # We wait until we know that all the connections have been created
-        while self.pending_connection is not None:
-            await asyncio_sleep(0)
-
-    def connect_sender_to_proxy(self, outbound_idx, inbound_idx):
+    async def connect_sender_to_proxy(
+            self, outbound_idx: int, inbound_idx: int, retry: bool = False
+    ):
         """
         Establishes a connection between a real node and the proxy representing
         another node
         """
+
         sender_node = self.nodes[outbound_idx]
         proxy_address = self.get_proxy_address(inbound_idx)
 
-        # Add the proxy to the outgoing connections list
-        sender_node.addnode(proxy_address, 'add')
+        # self.pending_connections is used as a sort of semaphore
+        if not retry:
+            self.pending_connections.add((outbound_idx, inbound_idx))
+            # Add the proxy to the outgoing connections list
+            sender_node.addnode(proxy_address, 'add')
+            self.num_connection_intents += 1
+
         # Connect to proxy. Will trigger ProxyInputConnection.connection_made
         sender_node.addnode(proxy_address, 'onetry')
 
-    def process_buffer(self, buffer, transport: Transport):
+    async def wait_for_pending_connections(self):
+        # The first time we give some margin to the other coroutines so they can
+        # start adding pending connections.
+        while self.num_connection_intents < len(self.nodes) * NUM_OUTBOUND_CONNECTIONS:
+            await asyncio_sleep(0.005)
+
+        # We wait until we know that all the connections have been created
+        while len(self.pending_connections) - self.num_unexpected_connections > 0:
+            logger.debug(
+                'Remaining connections to be fully established: '
+                f'{len(self.pending_connections)} '
+            )
+
+            # We retry becase the 'onetry' RPC call not always succeed
+            for outbound_idx, inbound_idx in self.pending_connections:
+                await self.connect_sender_to_proxy(
+                    outbound_idx, inbound_idx, retry=True
+                )
+
+            await asyncio_sleep(0.005)
+
+        if self.num_unexpected_connections > 0:
+            logger.warning(
+                'Some unexpected connections were established '
+                f'({self.num_unexpected_connections})'
+            )
+        if len(self.pending_connections) - self.num_unexpected_connections < 0:
+            logger.warning('The simulated network is bigger than intended')
+
+        logger.info('All pending connections have been established')
+
+    def process_buffer(
+            self,
+            buffer: bytes,
+            transport: Transport,
+            connection: Union['ProxyInputConnection', 'ProxyOutputConnection']
+    ):
         """
         This function helps the hub to impersonate nodes by modifying 'version'
         messages changing the "from" addresses.
@@ -222,7 +249,10 @@ class NodesHub:
                 return
 
             command = buffer[4:4 + 12].split(b'\x00', 1)[0]
-            logger.debug('Processing command %s' % str(command))
+            logger.debug(
+                f'{connection.__class__.__name__} {connection.id}: '
+                f'Processing command {str(command)}'
+            )
 
             if b'version' == command:
                 msg = buffer[MSG_HEADER_LENGTH:MSG_HEADER_LENGTH + msglen]
@@ -231,7 +261,9 @@ class NodesHub:
                     '!H', msg[VERSION_PORT_OFFSET:VERSION_PORT_OFFSET + 2]
                 )[0]
                 if node_port != 0:
-                    proxy_port = self.get_proxy_port(self.ports2nodes_map[node_port])
+                    proxy_port = self.get_proxy_port(
+                        self.ports2nodes_map[node_port]
+                    )
                 else:
                     proxy_port = 0  # The node is not listening for connections
 
@@ -255,6 +287,9 @@ class NodesHub:
 
 
 class ProxyInputConnection(Protocol):
+    """
+    Represents connections made from nodes to node's proxies
+    """
     def __init__(self, hub_ref: NodesHub, node_id: int):
         self.hub_ref = hub_ref
         self.receiver_id = node_id
@@ -266,25 +301,57 @@ class ProxyInputConnection(Protocol):
 
         self.recvbuf = b''
 
+        # Debugging related properties:
+        self.id = hex(id(self))
+        self.received_data_before_init = False
+
+        logger.debug(
+            f'ProxyInputConnection {self.id}: __init__ (receiver_id={node_id})'
+        )
+
+    @classmethod
+    def deferred_constructor(cls, hub_ref: NodesHub, node_id: int) -> Callable:
+        """
+        The lambda is declared here to ensure that we don't accidentally capture
+        a fixed node_id for all the proxy listeners.
+        """
+        return lambda: cls(hub_ref, node_id)
+
     def connection_made(self, transport):
-        if self.hub_ref.pending_connection is not None:
-            self.sender_id = self.hub_ref.pending_connection[0]
+
+        try:
+            transport_socket: socket_cls = transport._sock
+            peer_port = transport_socket.getpeername()[1]
+            peer_pid = get_pid_for_local_port(port=peer_port)
+            self.sender_id = self.hub_ref.pid2node_id[peer_pid]
+
+            # We wait until ProxyOutputConnection is created to remove pair from
+            # self.nodes_hub.pending_connections
+        except AttributeError:
+            # If this happens (theoretically possible due to the fact that we
+            # are accessing a "protected" property, we'll have to change how we
+            # obtain the socket.
+            logger.critical('Unable to obtain socket from transport')
+            exit(-1)
+
+        if self.transport is not None:
+            logger.critical('ProxyInputConnection has been reused')
+            exit(-1)
 
         self.transport: Transport = transport
 
         self.transport.pause_reading()
         self.pause_writing()
 
-        proxy_output_coroutine = self.hub_ref.loop.create_connection(
+        self.hub_ref.loop.create_task(self.hub_ref.loop.create_connection(
             protocol_factory=lambda: ProxyOutputConnection(
                 input_connection=self
             ),
             host=self.hub_ref.host,
             port=self.hub_ref.get_node_port(self.receiver_id)
-        )
-        self.hub_ref.loop.create_task(proxy_output_coroutine)
+        ))
 
-        logger.debug(f'''Created proxy input connection {(
+        logger.debug(f'''ProxyInputConnection {self.id}: connection_made {(
             self.sender_id,
             self.receiver_id
         )}''')
@@ -295,7 +362,7 @@ class ProxyInputConnection(Protocol):
         if not self.output_connection.transport.is_closing():
             self.output_connection.transport.close()
 
-        logger.debug(f'''Lost proxy input connection {(
+        logger.debug(f'''ProxyInputConnection {self.id}: connection_lost {(
             self.sender_id,
             self.receiver_id
         )}''')
@@ -307,29 +374,51 @@ class ProxyInputConnection(Protocol):
         while (
             self.output_connection is None or
             self.output_connection.transport is None
-        ):  # This should not happen, just defensive programming
-            await asyncio_sleep(0)
+        ):
+            self.received_data_before_init = True
+            if self.output_connection is None:
+                logger.debug(
+                    f'ProxyInputConnection {self.id}: Received data before '
+                    'being able to handle it. (output_connection is None)'
+                )
+            else:
+                logger.debug(
+                    f'ProxyInputConnection {self.id}: Received data before '
+                    'being able to handle it. (transport is None)'
+                )
+            await asyncio_sleep(0.0005)
 
-        if (self.sender_id, self.receiver_id) in self.hub_ref.node2node_delays:
-            await asyncio_sleep(
-                self.hub_ref.node2node_delays[(self.sender_id, self.receiver_id)]
+        if self.received_data_before_init:
+            logger.debug(
+                f'ProxyInputConnection {self.id}: '
+                'Initialized output_connection & transport'
             )
-        elif self.receiver_id in self.hub_ref.inbound_delays:
-            await asyncio_sleep(self.hub_ref.inbound_delays[self.receiver_id])
+            self.received_data_before_init = False
+
+        await asyncio_sleep(self.hub_ref.latency_policy.get_delay(
+            self.sender_id, self.receiver_id
+        ))
 
         if len(data) > 0:
             logger.debug(
-                f'Proxy input connection {(self.sender_id, self.receiver_id)} '
+                f'ProxyInputConnection {self.id}: {(self.sender_id, self.receiver_id)} '
                 f'received {len(data)} bytes'
             )
             self.recvbuf += data
             self.recvbuf = self.hub_ref.process_buffer(
                 buffer=self.recvbuf,
-                transport=self.output_connection.transport
+                transport=self.output_connection.transport,
+                connection=self
             )
 
 
 class ProxyOutputConnection(Protocol):
+    """
+    Represents connections made from proxies to the nodes they are representing,
+    instances of this class are created when ProxyInputConnection's
+    connection_made method is called.
+    """
+
     def __init__(self, input_connection: ProxyInputConnection):
         self.input_connection = input_connection
         self.hub_ref = input_connection.hub_ref
@@ -338,14 +427,30 @@ class ProxyOutputConnection(Protocol):
         self.recvbuf = b''
         input_connection.output_connection = self
 
+        # Debugging related properties:
+        self.id = hex(id(self))
+
+        logger.debug(f'ProxyOutputConnection {self.id}: __init__')
+
     def connection_made(self, transport):
         self.transport = transport
 
         self.input_connection.transport.resume_reading()
         self.input_connection.resume_writing()
-        self.hub_ref.pending_connection = None  # We release the lock
 
-        logger.debug(f'''Created proxy output connection {(
+        conn_key = (
+            self.input_connection.sender_id, self.input_connection.receiver_id
+        )
+        if conn_key in self.hub_ref.pending_connections:
+            self.hub_ref.pending_connections.remove(conn_key)
+        else:
+            self.hub_ref.num_unexpected_connections += 1
+            logger.debug(
+                f'ProxyOutputConnection {self.id}: connection_made '
+                ' (spontaneous connection)'
+            )
+
+        logger.debug(f'''ProxyOutputConnection {self.id}: connection_made {(
             self.input_connection.sender_id,
             self.input_connection.receiver_id
         )}''')
@@ -356,7 +461,7 @@ class ProxyOutputConnection(Protocol):
         if not self.input_connection.transport.is_closing():
             self.input_connection.transport.close()
 
-        logger.debug(f'''Lost proxy output connection {(
+        logger.debug(f'''ProxyOutputConnection {self.id}: connection_lost {(
             self.input_connection.sender_id,
             self.input_connection.receiver_id
         )}''')
@@ -369,23 +474,18 @@ class ProxyOutputConnection(Protocol):
             self.input_connection.receiver_id, self.input_connection.sender_id
         )
 
-        # if self.receiver2sender_pair in self.hub_ref.node2node_delays:
-        if receiver2sender_pair in self.hub_ref.node2node_delays:
-            await asyncio_sleep(
-                self.hub_ref.node2node_delays[receiver2sender_pair]
-            )
-        elif self.input_connection.sender_id in self.hub_ref.inbound_delays:
-            await asyncio_sleep(
-                self.hub_ref.inbound_delays[self.input_connection.sender_id]
-            )
+        await asyncio_sleep(self.hub_ref.latency_policy.get_delay(
+            *receiver2sender_pair
+        ))
 
         if len(data) > 0:
             logger.debug(
-                f'Proxy output connection {receiver2sender_pair[::-1]} '
+                f'ProxyOutputConnection {self.id}: {receiver2sender_pair[::-1]} '
                 f'received {len(data)} bytes'
             )
             self.recvbuf += data
             self.recvbuf = self.hub_ref.process_buffer(
                 buffer=self.recvbuf,
-                transport=self.input_connection.transport
+                transport=self.input_connection.transport,
+                connection=self
             )

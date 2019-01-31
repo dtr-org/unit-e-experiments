@@ -4,11 +4,13 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [packages]
+psutil = "~=5.5"
 
 [dev-packages]
-flake8 = "~=3.6"
-mypy = "*"
-pytest = "~=4.0"
+flake8 = "==3.6.0"
+mypy-mypyc = "~=0.660"
+pytest = "~=4.1"
 pytest-cov = "~=2.6"
 pytest-flake8 = "~=1.0"
 pytest-mypy = "~=0.3"
+pytest-asyncio = "*"
