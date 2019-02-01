@@ -26,7 +26,7 @@ from typing import (
     Union
 )
 
-from experiments.utils.latencies import StaticLatencyPolicy
+from experiments.utils.latencies import LatencyPolicy
 from experiments.utils.networking import get_pid_for_local_port
 from test_framework.messages import hash256
 from test_framework.test_node import TestNode
@@ -63,7 +63,7 @@ class NodesHub:
     def __init__(
             self,
             loop: AbstractEventLoop,
-            latency_policy: StaticLatencyPolicy,
+            latency_policy: LatencyPolicy,
             nodes: List[TestNode],
             host: str = '127.0.0.1'
     ):
@@ -86,6 +86,10 @@ class NodesHub:
         self.num_unexpected_connections = 0
 
     def sync_start_proxies(self):
+        """Sync wrapper around start_proxies"""
+        self.loop.run_until_complete(self.start_proxies())
+
+    async def start_proxies(self):
         """
         This method creates (& starts) a listener proxy for each node, the
         connections from each proxy to the real node that they represent will be
@@ -97,7 +101,7 @@ class NodesHub:
             self.ports2nodes_map[self.get_node_port(node_id)] = node_id
             self.ports2nodes_map[self.get_proxy_port(node_id)] = node_id
 
-        self.proxy_servers = self.loop.run_until_complete(gather(*[
+        self.proxy_servers = await gather(*[
             self.loop.create_server(
                 protocol_factory=ProxyInputConnection.deferred_constructor(
                     hub_ref=self, node_id=node_id
@@ -106,15 +110,18 @@ class NodesHub:
                 port=self.get_proxy_port(node_id)
             )
             for node_id, node in enumerate(self.nodes)
-        ]))
+        ])
 
         self.state = 'started_proxies'
 
     def sync_biconnect_nodes_as_linked_list(self, nodes_list=None):
-        """
-        Helper to make easier using NodesHub in non-asyncio aware code.
-        Connects nodes as a linked list.
-        """
+        """Sync wrapper around biconnect_nodes_as_linked_list"""
+        self.loop.run_until_complete(self.biconnect_nodes_as_linked_list(
+            nodes_list
+        ))
+
+    async def biconnect_nodes_as_linked_list(self, nodes_list=None):
+        """Connects nodes as a linked list."""
         if nodes_list is None:
             nodes_list = range(len(self.nodes))
 
@@ -127,17 +134,21 @@ class NodesHub:
             connection_futures.append(self.connect_nodes(i, j))
             connection_futures.append(self.connect_nodes(j, i))
 
-        self.loop.run_until_complete(gather(*connection_futures))
+        await gather(*connection_futures)
 
-    def sync_connect_nodes(self, graph_edges: set):
+    def sync_connect_nodes_graph(self, graph_edges: set):
+        """Sync wrapper around connect_nodes_graph"""
+        self.loop.run_until_complete(self.connect_nodes_graph(graph_edges))
+
+    async def connect_nodes_graph(self, graph_edges: set):
         """
-        Helper to make easier using NodesHub in non-asyncio aware code. Allows
-        to setup a network given an arbitrary graph (in the form of edges set).
+        Allows to setup a network given an arbitrary graph (in the form of edges
+        set).
         """
-        self.loop.run_until_complete(gather(*(
+        await gather(*(
             [self.connect_nodes(i, j) for (i, j) in graph_edges] +
             [self.wait_for_pending_connections()]
-        )))
+        ))
 
     def close(self):
         if self.state in ['closing', 'closed']:
@@ -161,7 +172,7 @@ class NodesHub:
         return p2p_port(len(self.nodes) + 1 + node_idx)
 
     def get_proxy_address(self, node_idx):
-        return '%s:%s' % (self.host, self.get_proxy_port(node_idx))
+        return f'{self.host}:{self.get_proxy_port(node_idx)}'
 
     async def connect_nodes(self, outbound_idx: int, inbound_idx: int):
         """
@@ -222,7 +233,7 @@ class NodesHub:
                 'Some unexpected connections were established '
                 f'({self.num_unexpected_connections})'
             )
-        if len(self.pending_connections) - self.num_unexpected_connections < 0:
+        if self.num_unexpected_connections - len(self.pending_connections) > 0:
             logger.warning('The simulated network is bigger than intended')
 
         logger.info('All pending connections have been established')
@@ -357,10 +368,19 @@ class ProxyInputConnection(Protocol):
         )}''')
 
     def connection_lost(self, exc):
-        if not self.transport.is_closing():
-            self.transport.close()
-        if not self.output_connection.transport.is_closing():
-            self.output_connection.transport.close()
+        if self.transport is not None:
+            if not self.transport.is_closing():
+                self.transport.close()
+            if (
+                    self.output_connection is not None and
+                    self.output_connection.transport is not None and
+                    not self.output_connection.transport.is_closing()
+            ):
+                self.output_connection.transport.close()
+        else:
+            logger.warning(
+                f'ProxyInputConnection {self.id}: connection_lost (too early)'
+            )
 
         logger.debug(f'''ProxyInputConnection {self.id}: connection_lost {(
             self.sender_id,
@@ -456,10 +476,15 @@ class ProxyOutputConnection(Protocol):
         )}''')
 
     def connection_lost(self, exc):
-        if not self.transport.is_closing():
-            self.transport.close()
-        if not self.input_connection.transport.is_closing():
-            self.input_connection.transport.close()
+        if self.transport is not None:
+            if not self.transport.is_closing():
+                self.transport.close()
+            if not self.input_connection.transport.is_closing():
+                self.input_connection.transport.close()
+        else:
+            logger.warning(
+                f'ProxyOutputConnection {self.id}: connection_lost (too early)'
+            )
 
         logger.debug(f'''ProxyOutputConnection {self.id}: connection_lost {(
             self.input_connection.sender_id,
