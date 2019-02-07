@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright (c) 2018 The Unit-e developers
+# Copyright (c) 2018-2019 The Unit-e developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -181,10 +181,9 @@ class ForkingSimulation:
         self.logger.info('Stopping sampling process')
 
     def sample(self):
-        sample_time = time_time()
-        time_delta = sample_time - self.start_time
-
         for node_id, node in sample(list(enumerate(self.nodes)), self.sample_size):
+            time_delta = time_time() - self.start_time
+
             tip_stats = defaultdict(int)
             for tip in node.getchaintips():
                 tip_stats[tip['status']] += 1
