@@ -207,7 +207,7 @@ def enforce_nodes_reconnections(
 
     node_ids = list({e[0] for e in graph_edges})
 
-    for i in range(num_reconnection_rounds):
+    for _ in range(num_reconnection_rounds):
         shuffle(node_ids)  # We randomize the reconnection steps
 
         for node_id in node_ids:
@@ -264,7 +264,7 @@ def get_node_neighbours(
         e[1] for e in graph_edges if e[0] == node_id
     })
 
-    for i in range(1, degree):
+    for _ in range(1, degree):
         neighbours = {e[0] for e in graph_edges if e[1] in neighbours}.union({
             e[1] for e in graph_edges if e[0] in neighbours
         }).union(neighbours)
