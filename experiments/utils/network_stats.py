@@ -6,7 +6,7 @@
 
 
 from time import time as time_time
-from typing import BinaryIO
+from typing import BinaryIO, Optional
 
 
 class NetworkStatsCollector:
@@ -19,8 +19,8 @@ class NetworkStatsCollector:
             self,
             command_name: str,
             command_size: int,
-            src_node_id: int,
-            dst_node_id: int
+            src_node_id: Optional[int],
+            dst_node_id: Optional[int]
     ):
         self.output_file.write((
             f'{time_time()}, {src_node_id}, {dst_node_id}, {command_name}, '

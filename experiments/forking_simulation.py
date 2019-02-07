@@ -61,12 +61,13 @@ from experiments.utils.graph import (
     ensure_one_inbound_connection_per_node,
     create_directed_graph,
 )
+from experiments.utils.latencies import StaticLatencyPolicy
+from experiments.utils.network_stats import NetworkStatsCollector
 from experiments.utils.nodes_hub import (
     NodesHub,
     NUM_INBOUND_CONNECTIONS,
     NUM_OUTBOUND_CONNECTIONS
 )
-from experiments.utils.latencies import StaticLatencyPolicy
 from test_framework.regtest_mnemonics import regtest_mnemonics
 from test_framework.test_node import TestNode
 from test_framework.util import initialize_datadir
@@ -83,7 +84,8 @@ class ForkingSimulation:
             sample_time: float = 1,
             sample_size: int = 10,
             graph_model: str = 'preferential_attachment',
-            results_file_name: str = 'fork_simulation_results.csv'
+            results_file_name: str = 'fork_simulation_results.csv',
+            network_stats_file_name: Optional[str] = 'network_stats.csv'
     ):
         if num_proposer_nodes < 0 or num_relay_nodes < 0:
             raise RuntimeError('Number of nodes must be positive')
@@ -120,6 +122,9 @@ class ForkingSimulation:
         self.results_file: Optional[BytesIO] = None
         self.results_file_name = results_file_name
 
+        self.network_stats_file: Optional[BytesIO] = None
+        self.network_stats_file_name = network_stats_file_name
+
         self.define_network_topology()
         self.is_running = False
 
@@ -131,10 +136,21 @@ class ForkingSimulation:
         self.setup_nodes()
         self.start_nodes()
 
+        # Opening network stats file
+        if self.network_stats_file_name is not None:
+            self.network_stats_file = open(
+                file=self.network_stats_file_name, mode='wb'
+            )
+
         self.nodes_hub = NodesHub(
             loop=self.loop,
             latency_policy=StaticLatencyPolicy(self.latency),
-            nodes=self.nodes
+            nodes=self.nodes,
+            network_stats_collector=(
+                NetworkStatsCollector(self.network_stats_file)
+                if self.network_stats_file is not None
+                else None
+            )
         )
         self.nodes_hub.sync_start_proxies()
         self.nodes_hub.sync_connect_nodes_graph(self.graph_edges)
@@ -159,7 +175,16 @@ class ForkingSimulation:
             self.logger.info('Releasing resources')
 
             if not self.results_file.closed:
+                self.results_file.flush()
                 self.results_file.close()
+
+            if (
+                self.network_stats_file is not None and
+                not self.network_stats_file.closed
+            ):
+                self.network_stats_file.flush()
+                self.network_stats_file.close()
+
             self.nodes_hub.close()
             self.stop_nodes()
             self.cleanup_directories()
@@ -306,7 +331,6 @@ def main():
     tf_util.MAX_NODES = 500  # has to be greater than 2n+2 where n = num_nodes
     tf_util.PortSeed.n = 314159
 
-    # TODO: Load simulation settings from settings.py
     simulation = ForkingSimulation(
         loop=get_event_loop(),
         latency=0,
@@ -316,7 +340,8 @@ def main():
         sample_time=1,
         sample_size=10,
         graph_model='preferential_attachment',
-        results_file_name='fork_simulation_results.csv'
+        results_file_name='fork_simulation_results.csv',
+        network_stats_file_name='network_stats.csv'
     )
     simulation.safe_run()
 

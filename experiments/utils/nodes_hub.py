@@ -28,6 +28,7 @@ from typing import (
 
 from experiments.utils.latencies import LatencyPolicy
 from experiments.utils.networking import get_pid_for_local_port
+from experiments.utils.network_stats import NetworkStatsCollector
 from test_framework.messages import hash256
 from test_framework.test_node import TestNode
 from test_framework.util import p2p_port
@@ -65,7 +66,8 @@ class NodesHub:
             loop: AbstractEventLoop,
             latency_policy: LatencyPolicy,
             nodes: List[TestNode],
-            host: str = '127.0.0.1'
+            host: str = '127.0.0.1',
+            network_stats_collector: Optional[NetworkStatsCollector] = None
     ):
         self.loop = loop
         self.latency_policy = latency_policy
@@ -84,6 +86,8 @@ class NodesHub:
 
         self.num_connection_intents = 0
         self.num_unexpected_connections = 0
+
+        self.network_stats_collector = network_stats_collector
 
     def sync_start_proxies(self):
         """Sync wrapper around start_proxies"""
@@ -265,6 +269,8 @@ class NodesHub:
                 f'Processing command {str(command)}'
             )
 
+            self.register_p2p_command(command, connection, msglen)
+
             if b'version' == command:
                 msg = buffer[MSG_HEADER_LENGTH:MSG_HEADER_LENGTH + msglen]
 
@@ -295,6 +301,36 @@ class NodesHub:
             buffer = buffer[MSG_HEADER_LENGTH + msglen:]
 
         return buffer
+
+    def register_p2p_command(
+            self,
+            command: bytes,
+            connection: Union['ProxyInputConnection', 'ProxyOutputConnection'],
+            msglen: int
+    ):
+        if self.network_stats_collector is None:
+            return
+
+        if isinstance(connection, ProxyInputConnection):
+            src_node_id: Optional[int] = connection.sender_id
+            dst_node_id: Optional[int] = connection.receiver_id
+        elif isinstance(connection, ProxyOutputConnection):
+            src_node_id = connection.input_connection.receiver_id
+            dst_node_id = connection.input_connection.sender_id
+        else:
+            raise ValueError('Incorrect type for connection')
+
+        if src_node_id is None:
+            logger.warning(f'Register {command} command for unknown sender')
+        if dst_node_id is None:
+            logger.warning(f'Register {command} command for unknown receiver')
+
+        self.network_stats_collector.register_event(
+            command_name=command.decode(),
+            command_size=msglen,
+            src_node_id=src_node_id,
+            dst_node_id=dst_node_id
+        )
 
 
 class ProxyInputConnection(Protocol):
