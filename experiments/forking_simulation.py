@@ -46,7 +46,7 @@ from os.path import (
 from random import sample
 from shutil import rmtree
 from tempfile import mkdtemp
-from time import time
+from time import time as time_time
 from typing import (
     List,
     Optional,
@@ -148,7 +148,7 @@ class ForkingSimulation:
         # Opening results file
         self.results_file = open(file=self.results_file_name, mode='wb')
 
-        self.start_time = time()
+        self.start_time = time_time()
         self.loop.create_task(self.sample_forever())
         self.loop.run_until_complete(self.trigger_simulation_stop())
 
@@ -181,7 +181,7 @@ class ForkingSimulation:
         self.logger.info('Stopping sampling process')
 
     def sample(self):
-        sample_time = time()
+        sample_time = time_time()
         time_delta = sample_time - self.start_time
 
         for node_id, node in sample(list(enumerate(self.nodes)), self.sample_size):
