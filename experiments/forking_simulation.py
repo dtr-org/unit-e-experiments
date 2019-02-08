@@ -175,14 +175,12 @@ class ForkingSimulation:
             self.logger.info('Releasing resources')
 
             if not self.results_file.closed:
-                self.results_file.flush()
                 self.results_file.close()
 
             if (
                 self.network_stats_file is not None and
                 not self.network_stats_file.closed
             ):
-                self.network_stats_file.flush()
                 self.network_stats_file.close()
 
             self.nodes_hub.close()
