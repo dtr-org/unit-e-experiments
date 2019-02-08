@@ -42,7 +42,7 @@ def test_weighted_random_int():
     range5 = list(range(5))
 
     counter = defaultdict(int)
-    for i in range(10000):
+    for _ in range(10000):
         rnd = weighted_random_int([1, 12, 25, 50, 100])
         counter[rnd] += 1
         assert rnd in range5
@@ -50,7 +50,7 @@ def test_weighted_random_int():
         assert counter[i - 1] < counter[i]
 
     counter = defaultdict(int)
-    for i in range(10000):
+    for _ in range(10000):
         rnd = weighted_random_int([50, 75, 88, 99, 100])
         counter[rnd] += 1
         assert rnd in range5
