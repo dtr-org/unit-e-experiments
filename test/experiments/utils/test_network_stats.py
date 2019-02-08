@@ -27,5 +27,5 @@ def test_network_stats_collector():
         )
 
     mocked_file.write.assert_called_once_with(
-        b'1549551476.292045, 13, 29, version, 65\n'
+        b'1549551476.292045,13,29,version,65\n'
     )
