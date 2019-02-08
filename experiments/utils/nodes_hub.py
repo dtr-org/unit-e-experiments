@@ -269,7 +269,7 @@ class NodesHub:
                 f'Processing command {str(command)}'
             )
 
-            self.register_p2p_command(command, connection, msglen)
+            self.register_p2p_command(command, connection, MSG_HEADER_LENGTH + msglen)
 
             if b'version' == command:
                 msg = buffer[MSG_HEADER_LENGTH:MSG_HEADER_LENGTH + msglen]
