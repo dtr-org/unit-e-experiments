@@ -10,7 +10,7 @@ from typing import BinaryIO, Optional
 
 
 class NetworkStatsCollector:
-    """"""
+    """It dumps networking-related statistics to a CSV file."""
 
     def __init__(self, output_file: BinaryIO):
         self.output_file = output_file

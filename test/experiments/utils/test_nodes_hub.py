@@ -10,6 +10,7 @@ from asyncio import (
     AbstractServer,
     sleep as asyncio_sleep
 )
+from logging import Logger
 from os import getpid
 from subprocess import Popen
 from unittest.mock import Mock, patch
@@ -22,7 +23,13 @@ from test_framework.test_node import TestNode as FakeNode
 
 from experiments.utils.latencies import LatencyPolicy
 from experiments.utils.networking import get_pid_for_local_port
-from experiments.utils.nodes_hub import NodesHub, NUM_OUTBOUND_CONNECTIONS
+from experiments.utils.network_stats import NetworkStatsCollector
+from experiments.utils.nodes_hub import (
+    NodesHub,
+    NUM_OUTBOUND_CONNECTIONS,
+    ProxyInputConnection,
+    ProxyOutputConnection
+)
 
 
 def test_get_port_methods():
@@ -44,6 +51,84 @@ def test_get_port_methods():
         used_ports.add(node_port)
         assert(proxy_port not in used_ports)
         used_ports.add(proxy_port)
+
+
+def test_register_p2p_command():
+    init_environment()
+
+    network_stats_collector_mock = Mock(spec=NetworkStatsCollector)
+
+    nodes_hub = NodesHub(
+        loop=Mock(spec=AbstractEventLoop),
+        latency_policy=Mock(spec=LatencyPolicy),
+        nodes=[get_node_mock(node_id) for node_id in range(5)],
+        network_stats_collector=network_stats_collector_mock
+    )
+
+    # With ProxyInputConnection
+    proxy_input_connection_mock = Mock(spec=ProxyInputConnection)
+    proxy_input_connection_mock.sender_id = 42
+    proxy_input_connection_mock.receiver_id = 3
+    nodes_hub.register_p2p_command(
+        command=b'version',
+        connection=proxy_input_connection_mock,
+        msglen=65
+    )
+    network_stats_collector_mock.register_event.assert_called_once_with(
+        command_name='version',
+        command_size=65,
+        src_node_id=42,
+        dst_node_id=3
+    )
+
+    # With ProxyOutputConnection
+    proxy_output_connection_mock = Mock(spec=ProxyOutputConnection)
+    proxy_output_connection_mock.input_connection = proxy_input_connection_mock
+    nodes_hub.register_p2p_command(
+        command=b'version',
+        connection=proxy_output_connection_mock,
+        msglen=65
+    )
+    network_stats_collector_mock.register_event.assert_called_with(
+        command_name='version',
+        command_size=65,
+        src_node_id=3,
+        dst_node_id=42
+    )
+
+    # With invalid connection type
+    with pytest.raises(expected_exception=ValueError):
+        nodes_hub.register_p2p_command(
+            command=b'version', connection=None, msglen=65
+        )
+
+    # With missing node IDs
+    with patch(
+        target='experiments.utils.nodes_hub.logger',
+        spec=Logger
+    ) as logger_mock:
+        # Missing sender ID
+        proxy_input_connection_mock.sender_id = None
+        nodes_hub.register_p2p_command(
+            command=b'version',
+            connection=proxy_input_connection_mock,
+            msglen=65
+        )
+        logger_mock.warning.assert_called_once_with(
+            'Register b\'version\' command for unknown sender'
+        )
+
+        # Missing receiver ID
+        proxy_input_connection_mock.sender_id = 42
+        proxy_input_connection_mock.receiver_id = None
+        nodes_hub.register_p2p_command(
+            command=b'version',
+            connection=proxy_input_connection_mock,
+            msglen=65
+        )
+        logger_mock.warning.assert_called_with(
+            'Register b\'version\' command for unknown receiver'
+        )
 
 
 @pytest.mark.asyncio
@@ -174,6 +259,11 @@ async def test_connect_nodes_graph(event_loop: AbstractEventLoop):
         fake_wait_for_pending_connections.assert_awaited()
 
         nodes_hub.close()
+
+
+# ------------------------------------------------------------------------------
+# Helper functions:
+# ------------------------------------------------------------------------------
 
 
 def init_environment():
