@@ -281,19 +281,17 @@ class NodesHub:
                     proxy_port = self.get_proxy_port(
                         self.ports2nodes_map[node_port]
                     )
+                    msg = (
+                        msg[:VERSION_PORT_OFFSET] +
+                        pack('!H', proxy_port) +
+                        msg[VERSION_PORT_OFFSET + 2:]
+                    )
+                    msg_checksum = hash256(msg)[:4]  # Truncated double sha256
+                    new_header = buffer[:MSG_HEADER_LENGTH - 4] + msg_checksum
+
+                    transport.write(new_header + msg)
                 else:
-                    proxy_port = 0  # The node is not listening for connections
-
-                msg = (
-                    msg[:VERSION_PORT_OFFSET] +
-                    pack('!H', proxy_port) +
-                    msg[VERSION_PORT_OFFSET + 2:]
-                )
-
-                msg_checksum = hash256(msg)[:4]  # Truncated double sha256
-                new_header = buffer[:MSG_HEADER_LENGTH - 4] + msg_checksum
-
-                transport.write(new_header + msg)
+                    transport.write(buffer[:MSG_HEADER_LENGTH + msglen])
             else:
                 # We pass an unaltered message
                 transport.write(buffer[:MSG_HEADER_LENGTH + msglen])

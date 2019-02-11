@@ -8,10 +8,11 @@
 from asyncio import (
     AbstractEventLoop,
     AbstractServer,
-    sleep as asyncio_sleep
-)
+    sleep as asyncio_sleep,
+    Transport)
 from logging import Logger
 from os import getpid
+from struct import pack
 from subprocess import Popen
 from unittest.mock import Mock, patch
 
@@ -129,6 +130,80 @@ def test_register_p2p_command():
         logger_mock.warning.assert_called_with(
             'Register b\'version\' command for unknown receiver'
         )
+
+
+def test_process_buffer():
+    init_environment()
+
+    nodes_hub = NodesHub(
+        loop=Mock(spec=AbstractEventLoop),
+        latency_policy=Mock(spec=LatencyPolicy),
+        nodes=[get_node_mock(node_id) for node_id in range(5)]
+    )
+
+    connection_mock = Mock(spec=Transport)
+    connection_mock.id = 1234
+
+    # Incomplete messages are not processed, the buffer remains untouched
+    assert (b'0123456789' == nodes_hub.process_buffer(
+        buffer=b'0123456789',  # Shorter than MSG_HEADER_LENGTH
+        transport=Mock(spec=Transport),
+        connection=connection_mock
+    ))
+
+    # Processing 'verack' message
+    buffer = (
+        b'\x00\x00\x00\x00verack\x00\x00\x00\x00\x00\x00' +
+        pack('<i', 0)[:4] +  # Msg length (without the header)
+        b'\x5d\xf6\xe0\xe2'  # Msg checksum
+        b'123456'            # A little bit of noise
+    )
+    processed_buffer = nodes_hub.process_buffer(
+        buffer=buffer,
+        transport=Mock(spec=Transport),
+        connection=connection_mock
+    )
+    # The message is consumed, the next incomplete message remains unprocessed
+    assert (b'123456' == processed_buffer)
+
+    # Processing 'version' message
+    buffer = (
+        # Message Header
+        b'\xfa\xbf\xb5\xda'             # Network-type
+        b'version\x00\x00\x00\x00\x00'  # Command-type
+        b't\x00\x00\x00'                # Msg length (without the header)
+        b'\x1c\x1d\xce\xb0'             # Msg checksum
+
+        # Message Body
+        b'\x7f\x11\x01\x00\r\x84\x00\x00\x00\x00\x00\x00\xfcQa\\\x00\x00\x00'
+        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x84\x00\x00\x00\x00\x00'
+        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        b'\x00\x00Nz:+\x86\xbb\xef\xe4\x1e/Feuerland:0.16.3(testnode25)/\x00'
+        b'\x00\x00\x00\x01'
+    )
+    transport_mock = Mock(spec=Transport)
+    processed_buffer = nodes_hub.process_buffer(
+        buffer=buffer,
+        transport=transport_mock,
+        connection=connection_mock
+    )
+    assert (b'' == processed_buffer)
+    # The node is not listening connections, so it specifies port 0, hence we
+    # we pass the original message without any changes.
+    transport_mock.write.assert_called_once_with(
+        b'\xfa\xbf\xb5\xda'
+        b'version\x00\x00\x00\x00\x00'
+        b't\x00\x00\x00'
+        b'\x1c\x1d\xce\xb0'
+
+        b'\x7f\x11\x01\x00\r\x84\x00\x00\x00\x00\x00\x00\xfcQa\\\x00\x00\x00'
+        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x84\x00\x00\x00\x00\x00'
+        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        b'\x00\x00Nz:+\x86\xbb\xef\xe4\x1e/Feuerland:0.16.3(testnode25)/\x00'
+        b'\x00\x00\x00\x01'
+    )
 
 
 @pytest.mark.asyncio
