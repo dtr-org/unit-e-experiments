@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright (c) 2018 The Unit-e developers
+# Copyright (c) 2018-2019 The Unit-e developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -46,7 +46,7 @@ from os.path import (
 from random import sample
 from shutil import rmtree
 from tempfile import mkdtemp
-from time import time
+from time import time as time_time
 from typing import (
     List,
     Optional,
@@ -61,12 +61,13 @@ from experiments.utils.graph import (
     ensure_one_inbound_connection_per_node,
     create_directed_graph,
 )
+from experiments.utils.latencies import StaticLatencyPolicy
+from experiments.utils.network_stats import NetworkStatsCollector
 from experiments.utils.nodes_hub import (
     NodesHub,
     NUM_INBOUND_CONNECTIONS,
     NUM_OUTBOUND_CONNECTIONS
 )
-from experiments.utils.latencies import StaticLatencyPolicy
 from test_framework.regtest_mnemonics import regtest_mnemonics
 from test_framework.test_node import TestNode
 from test_framework.util import initialize_datadir
@@ -83,7 +84,8 @@ class ForkingSimulation:
             sample_time: float = 1,
             sample_size: int = 10,
             graph_model: str = 'preferential_attachment',
-            results_file_name: str = 'fork_simulation_results.csv'
+            results_file_name: str = 'fork_simulation_results.csv',
+            network_stats_file_name: Optional[str] = 'network_stats.csv'
     ):
         if num_proposer_nodes < 0 or num_relay_nodes < 0:
             raise RuntimeError('Number of nodes must be positive')
@@ -120,6 +122,9 @@ class ForkingSimulation:
         self.results_file: Optional[BytesIO] = None
         self.results_file_name = results_file_name
 
+        self.network_stats_file: Optional[BytesIO] = None
+        self.network_stats_file_name = network_stats_file_name
+
         self.define_network_topology()
         self.is_running = False
 
@@ -131,10 +136,21 @@ class ForkingSimulation:
         self.setup_nodes()
         self.start_nodes()
 
+        # Opening network stats file
+        if self.network_stats_file_name is not None:
+            self.network_stats_file = open(
+                file=self.network_stats_file_name, mode='wb'
+            )
+
         self.nodes_hub = NodesHub(
             loop=self.loop,
             latency_policy=StaticLatencyPolicy(self.latency),
-            nodes=self.nodes
+            nodes=self.nodes,
+            network_stats_collector=(
+                NetworkStatsCollector(self.network_stats_file)
+                if self.network_stats_file is not None
+                else None
+            )
         )
         self.nodes_hub.sync_start_proxies()
         self.nodes_hub.sync_connect_nodes_graph(self.graph_edges)
@@ -148,7 +164,7 @@ class ForkingSimulation:
         # Opening results file
         self.results_file = open(file=self.results_file_name, mode='wb')
 
-        self.start_time = time()
+        self.start_time = time_time()
         self.loop.create_task(self.sample_forever())
         self.loop.run_until_complete(self.trigger_simulation_stop())
 
@@ -160,6 +176,13 @@ class ForkingSimulation:
 
             if not self.results_file.closed:
                 self.results_file.close()
+
+            if (
+                self.network_stats_file is not None and
+                not self.network_stats_file.closed
+            ):
+                self.network_stats_file.close()
+
             self.nodes_hub.close()
             self.stop_nodes()
             self.cleanup_directories()
@@ -181,10 +204,9 @@ class ForkingSimulation:
         self.logger.info('Stopping sampling process')
 
     def sample(self):
-        sample_time = time()
-        time_delta = sample_time - self.start_time
-
         for node_id, node in sample(list(enumerate(self.nodes)), self.sample_size):
+            time_delta = time_time() - self.start_time
+
             tip_stats = defaultdict(int)
             for tip in node.getchaintips():
                 tip_stats[tip['status']] += 1
@@ -307,7 +329,6 @@ def main():
     tf_util.MAX_NODES = 500  # has to be greater than 2n+2 where n = num_nodes
     tf_util.PortSeed.n = 314159
 
-    # TODO: Load simulation settings from settings.py
     simulation = ForkingSimulation(
         loop=get_event_loop(),
         latency=0,
@@ -317,7 +338,8 @@ def main():
         sample_time=1,
         sample_size=10,
         graph_model='preferential_attachment',
-        results_file_name='fork_simulation_results.csv'
+        results_file_name='fork_simulation_results.csv',
+        network_stats_file_name='network_stats.csv'
     )
     simulation.safe_run()
 

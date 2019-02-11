@@ -8,7 +8,9 @@ psutil = "~=5.5"
 
 [dev-packages]
 asynctest = "~=0.12"
-flake8 = "==3.6.0"
+flake8 = "~=3.7.0"
+flake8-bugbear = "~=18.8"
+mccabe = "~=0.6"
 mypy-mypyc = "~=0.660"
 pytest = "~=4.1"
 pytest-cov = "~=2.6"

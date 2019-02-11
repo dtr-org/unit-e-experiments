@@ -14,6 +14,7 @@ source "${PRJ_DIR}/.venv/bin/activate"
 export MYPYPATH="${PRJ_DIR}:${TRAVIS_DIR}/unit-e/test/functional:${MYPYPATH}"
 export PYTHONPATH="${PRJ_DIR}:${TRAVIS_DIR}/unit-e/test/functional:${PYTHONPATH}"
 
+flake8 "${PRJ_DIR}/experiments"
 pytest
 
 deactivate
