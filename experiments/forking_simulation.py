@@ -215,9 +215,9 @@ class ForkingSimulation:
             # in one single file, without having to perform "join" operations of
             # any type.
             self.results_file.write((
-                f'{time_delta}, {node_id}, {self.latency}, '
-                f'{tip_stats["active"]}, {tip_stats["valid-fork"]}, '
-                f'{tip_stats["valid-headers"]}, {tip_stats["headers-only"]}\n'
+                f'{time_delta},{node_id},{self.latency},'
+                f'{tip_stats["active"]},{tip_stats["valid-fork"]},'
+                f'{tip_stats["valid-headers"]},{tip_stats["headers-only"]}\n'
             ).encode())
 
     def setup_directories(self):
