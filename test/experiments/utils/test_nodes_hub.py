@@ -8,9 +8,11 @@
 from asyncio import (
     AbstractEventLoop,
     AbstractServer,
-    sleep as asyncio_sleep
-)
+    sleep as asyncio_sleep,
+    Transport)
+from logging import Logger
 from os import getpid
+from struct import pack
 from subprocess import Popen
 from unittest.mock import Mock, patch
 
@@ -22,7 +24,13 @@ from test_framework.test_node import TestNode as FakeNode
 
 from experiments.utils.latencies import LatencyPolicy
 from experiments.utils.networking import get_pid_for_local_port
-from experiments.utils.nodes_hub import NodesHub, NUM_OUTBOUND_CONNECTIONS
+from experiments.utils.network_stats import NetworkStatsCollector
+from experiments.utils.nodes_hub import (
+    NodesHub,
+    NUM_OUTBOUND_CONNECTIONS,
+    ProxyInputConnection,
+    ProxyOutputConnection
+)
 
 
 def test_get_port_methods():
@@ -44,6 +52,146 @@ def test_get_port_methods():
         used_ports.add(node_port)
         assert(proxy_port not in used_ports)
         used_ports.add(proxy_port)
+
+
+def test_register_p2p_command():
+    init_environment()
+
+    network_stats_collector_mock = Mock(spec=NetworkStatsCollector)
+
+    nodes_hub = NodesHub(
+        loop=Mock(spec=AbstractEventLoop),
+        latency_policy=Mock(spec=LatencyPolicy),
+        nodes=[get_node_mock(node_id) for node_id in range(5)],
+        network_stats_collector=network_stats_collector_mock
+    )
+
+    # With ProxyInputConnection
+    proxy_input_connection_mock = Mock(spec=ProxyInputConnection)
+    proxy_input_connection_mock.sender_id = 42
+    proxy_input_connection_mock.receiver_id = 3
+    nodes_hub.register_p2p_command(
+        command=b'version',
+        connection=proxy_input_connection_mock,
+        msglen=65
+    )
+    network_stats_collector_mock.register_event.assert_called_once_with(
+        command_name='version',
+        command_size=65,
+        src_node_id=42,
+        dst_node_id=3
+    )
+
+    # With ProxyOutputConnection
+    proxy_output_connection_mock = Mock(spec=ProxyOutputConnection)
+    proxy_output_connection_mock.input_connection = proxy_input_connection_mock
+    nodes_hub.register_p2p_command(
+        command=b'version',
+        connection=proxy_output_connection_mock,
+        msglen=65
+    )
+    network_stats_collector_mock.register_event.assert_called_with(
+        command_name='version',
+        command_size=65,
+        src_node_id=3,
+        dst_node_id=42
+    )
+
+    # With invalid connection type
+    with pytest.raises(expected_exception=ValueError):
+        nodes_hub.register_p2p_command(
+            command=b'version', connection=None, msglen=65
+        )
+
+    # With missing node IDs
+    with patch(
+        target='experiments.utils.nodes_hub.logger',
+        spec=Logger
+    ) as logger_mock:
+        # Missing sender ID
+        proxy_input_connection_mock.sender_id = None
+        nodes_hub.register_p2p_command(
+            command=b'version',
+            connection=proxy_input_connection_mock,
+            msglen=65
+        )
+        logger_mock.warning.assert_called_once_with(
+            'Register b\'version\' command for unknown sender'
+        )
+
+        # Missing receiver ID
+        proxy_input_connection_mock.sender_id = 42
+        proxy_input_connection_mock.receiver_id = None
+        nodes_hub.register_p2p_command(
+            command=b'version',
+            connection=proxy_input_connection_mock,
+            msglen=65
+        )
+        logger_mock.warning.assert_called_with(
+            'Register b\'version\' command for unknown receiver'
+        )
+
+
+def test_process_buffer():
+    init_environment()
+
+    nodes_hub = NodesHub(
+        loop=Mock(spec=AbstractEventLoop),
+        latency_policy=Mock(spec=LatencyPolicy),
+        nodes=[get_node_mock(node_id) for node_id in range(5)]
+    )
+
+    connection_mock = Mock(spec=Transport)
+    connection_mock.id = 1234
+
+    # Incomplete messages are not processed, the buffer remains untouched
+    assert (b'0123456789' == nodes_hub.process_buffer(
+        buffer=b'0123456789',  # Shorter than MSG_HEADER_LENGTH
+        transport=Mock(spec=Transport),
+        connection=connection_mock
+    ))
+
+    # Processing 'verack' message
+    buffer = (
+        b'\x00\x00\x00\x00verack\x00\x00\x00\x00\x00\x00' +
+        pack('<i', 0)[:4] +  # Msg length (without the header)
+        b'\x5d\xf6\xe0\xe2'  # Msg checksum
+        b'123456'            # A little bit of noise
+    )
+    processed_buffer = nodes_hub.process_buffer(
+        buffer=buffer,
+        transport=Mock(spec=Transport),
+        connection=connection_mock
+    )
+    # The message is consumed, the next incomplete message remains unprocessed
+    assert (b'123456' == processed_buffer)
+
+    # Processing 'version' message
+    buffer = (
+        # Message Header
+        b'\xfa\xbf\xb5\xda'             # Network-type
+        b'version\x00\x00\x00\x00\x00'  # Command-type
+        b't\x00\x00\x00'                # Msg length (without the header)
+        b'\x1c\x1d\xce\xb0'             # Msg checksum
+
+        # Message Body
+        b'\x7f\x11\x01\x00\r\x84\x00\x00\x00\x00\x00\x00\xfcQa\\\x00\x00\x00'
+        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x84\x00\x00\x00\x00\x00'
+        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+        b'\x00\x00Nz:+\x86\xbb\xef\xe4\x1e/Feuerland:0.16.3(testnode25)/\x00'
+        b'\x00\x00\x00\x01'
+    )
+    transport_mock = Mock(spec=Transport)
+    processed_buffer = nodes_hub.process_buffer(
+        buffer=buffer,
+        transport=transport_mock,
+        connection=connection_mock
+    )
+    assert (b'' == processed_buffer)
+    # The node is not listening connections, so it specifies port 0, hence we
+    # we pass the original message without any changes.
+    transport_mock.write.assert_called_once_with(buffer)
 
 
 @pytest.mark.asyncio
@@ -174,6 +322,11 @@ async def test_connect_nodes_graph(event_loop: AbstractEventLoop):
         fake_wait_for_pending_connections.assert_awaited()
 
         nodes_hub.close()
+
+
+# ------------------------------------------------------------------------------
+# Helper functions:
+# ------------------------------------------------------------------------------
 
 
 def init_environment():
