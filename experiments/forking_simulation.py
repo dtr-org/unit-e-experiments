@@ -332,8 +332,16 @@ def main():
     tf_util.PortSeed.n = 314159
 
     parser = ArgumentParser(description='Forking simulation')
-    parser.add_argument('-n', '--network-stats-file', help='Where to output network stats', required=True)
-    parser.add_argument('-f', '--forking-stats-file', help='Where to output simulation results', required=True)
+    parser.add_argument(
+        '-n', '--network-stats-file',
+        help='Where to output network stats',
+        default='network_stats.log'
+    )
+    parser.add_argument(
+        '-f', '--forking-stats-file',
+        help='Where to output simulation results',
+        default='forking_stats.log'
+    )
     cmd_args = vars(parser.parse_args())
 
     simulation = ForkingSimulation(
