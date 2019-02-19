@@ -66,8 +66,8 @@ class NodesHub:
             loop: AbstractEventLoop,
             latency_policy: LatencyPolicy,
             nodes: List[TestNode],
-            host: str = '127.0.0.1',
-            network_stats_collector: Optional[NetworkStatsCollector] = None
+            network_stats_collector: NetworkStatsCollector,
+            host: str = '127.0.0.1'
     ):
         self.loop = loop
         self.latency_policy = latency_policy
@@ -306,9 +306,6 @@ class NodesHub:
             connection: Union['ProxyInputConnection', 'ProxyOutputConnection'],
             msglen: int
     ):
-        if self.network_stats_collector is None:
-            return
-
         if isinstance(connection, ProxyInputConnection):
             src_node_id: Optional[int] = connection.sender_id
             dst_node_id: Optional[int] = connection.receiver_id

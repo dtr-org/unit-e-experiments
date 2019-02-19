@@ -84,9 +84,9 @@ class ForkingSimulation:
             simulation_time: float = 600,
             sample_time: float = 1,
             sample_size: int = 10,
+            forking_stats_file_name: str,
+            network_stats_file_name: str,
             graph_model: str = 'preferential_attachment',
-            results_file_name: str = 'fork_simulation_results.csv',
-            network_stats_file_name: Optional[str] = 'network_stats.csv'
     ):
         if num_proposer_nodes < 0 or num_relay_nodes < 0:
             raise RuntimeError('Number of nodes must be positive')
@@ -120,8 +120,8 @@ class ForkingSimulation:
         self.cache_dir = normpath(dirname(realpath(__file__)) + '/cache')
         self.tmp_dir = ''
 
-        self.results_file: Optional[BytesIO] = None
-        self.results_file_name = results_file_name
+        self.forking_stats_file: Optional[BytesIO] = None
+        self.forking_stats_file_name = forking_stats_file_name
 
         self.network_stats_file: Optional[BytesIO] = None
         self.network_stats_file_name = network_stats_file_name
@@ -137,21 +137,15 @@ class ForkingSimulation:
         self.setup_nodes()
         self.start_nodes()
 
-        # Opening network stats file
-        if self.network_stats_file_name is not None:
-            self.network_stats_file = open(
-                file=self.network_stats_file_name, mode='wb'
-            )
+        # Opening network stats files
+        self.network_stats_file = open(file=self.network_stats_file_name, mode='wb')
+        self.forking_stats_file = open(file=self.forking_stats_file_name, mode='wb')
 
         self.nodes_hub = NodesHub(
             loop=self.loop,
             latency_policy=StaticLatencyPolicy(self.latency),
             nodes=self.nodes,
-            network_stats_collector=(
-                NetworkStatsCollector(self.network_stats_file)
-                if self.network_stats_file is not None
-                else None
-            )
+            network_stats_collector=NetworkStatsCollector(self.network_stats_file)
         )
         self.nodes_hub.sync_start_proxies()
         self.nodes_hub.sync_connect_nodes_graph(self.graph_edges)
@@ -161,9 +155,6 @@ class ForkingSimulation:
             self.nodes[proposer_id].importmasterkey(
                 regtest_mnemonics[idx]['mnemonics']
             )
-
-        # Opening results file
-        self.results_file = open(file=self.results_file_name, mode='wb')
 
         self.start_time = time_time()
         self.loop.create_task(self.sample_forever())
@@ -175,8 +166,8 @@ class ForkingSimulation:
         finally:
             self.logger.info('Releasing resources')
 
-            if not self.results_file.closed:
-                self.results_file.close()
+            if not self.forking_stats_file.closed:
+                self.forking_stats_file.close()
 
             if (
                 self.network_stats_file is not None and
@@ -215,7 +206,7 @@ class ForkingSimulation:
             # There's redundant data because it allows us to keep all the data
             # in one single file, without having to perform "join" operations of
             # any type.
-            self.results_file.write((
+            self.forking_stats_file.write((
                 f'{time_delta},{node_id},{self.latency},'
                 f'{tip_stats["active"]},{tip_stats["valid-fork"]},'
                 f'{tip_stats["valid-headers"]},{tip_stats["headers-only"]}\n'
@@ -353,7 +344,7 @@ def main():
         sample_time=1,
         sample_size=10,
         graph_model='preferential_attachment',
-        results_file_name=cmd_args['forking_stats_file'],
+        forking_stats_file_name=cmd_args['forking_stats_file'],
         network_stats_file_name=cmd_args['network_stats_file']
     )
     simulation.safe_run()
