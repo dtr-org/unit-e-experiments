@@ -24,6 +24,7 @@ The outcomes that we want to observe are:
 
 import sys
 
+from argparse import ArgumentParser
 from asyncio import (
     AbstractEventLoop,
     sleep as asyncio_sleep,
@@ -229,6 +230,7 @@ class ForkingSimulation:
         if self.tmp_dir != '' and path_exists(self.tmp_dir):
             self.logger.info('Cleaning temporary directories')
             rmtree(self.tmp_dir)
+        # TODO: Remove wallet.* files too
 
     def setup_chain(self):
         self.logger.info('Preparing "empty" chain')
@@ -329,6 +331,11 @@ def main():
     tf_util.MAX_NODES = 500  # has to be greater than 2n+2 where n = num_nodes
     tf_util.PortSeed.n = 314159
 
+    parser = ArgumentParser(description='Forking simulation')
+    parser.add_argument('-n', '--network-stats-file', help='Where to output network stats', required=True)
+    parser.add_argument('-f', '--forking-stats-file', help='Where to output simulation results', required=True)
+    cmd_args = vars(parser.parse_args())
+
     simulation = ForkingSimulation(
         loop=get_event_loop(),
         latency=0,
@@ -338,8 +345,8 @@ def main():
         sample_time=1,
         sample_size=10,
         graph_model='preferential_attachment',
-        results_file_name='fork_simulation_results.csv',
-        network_stats_file_name='network_stats.csv'
+        results_file_name=cmd_args['forking_stats_file'],
+        network_stats_file_name=cmd_args['network_stats_file']
     )
     simulation.safe_run()
 
