@@ -335,12 +335,12 @@ def main():
     parser.add_argument(
         '-n', '--network-stats-file',
         help='Where to output network stats',
-        default='network_stats.log'
+        default='network_stats.csv'
     )
     parser.add_argument(
         '-f', '--forking-stats-file',
         help='Where to output simulation results',
-        default='forking_stats.log'
+        default='forking_stats.csv'
     )
     cmd_args = vars(parser.parse_args())
 
