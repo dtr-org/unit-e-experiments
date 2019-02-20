@@ -30,7 +30,6 @@ from asyncio import (
     sleep as asyncio_sleep,
     get_event_loop,
 )
-from collections import defaultdict
 from io import BytesIO
 from logging import (
     INFO,
@@ -85,7 +84,6 @@ class ForkingSimulation:
             simulation_time: float = 600,
             sample_time: float = 1,
             sample_size: int = 10,
-            forking_stats_file_name: str,
             network_stats_file_name: str,
             nodes_stats_directory: str,
             graph_model: str = 'preferential_attachment',
@@ -122,9 +120,6 @@ class ForkingSimulation:
         self.cache_dir = normpath(dirname(realpath(__file__)) + '/cache')
         self.tmp_dir = ''
 
-        self.forking_stats_file: Optional[BytesIO] = None
-        self.forking_stats_file_name = forking_stats_file_name
-
         self.network_stats_file: Optional[BytesIO] = None
         self.network_stats_file_name = network_stats_file_name
 
@@ -147,7 +142,6 @@ class ForkingSimulation:
 
         # Opening network stats files
         self.network_stats_file = open(file=self.network_stats_file_name, mode='wb')
-        self.forking_stats_file = open(file=self.forking_stats_file_name, mode='wb')
 
         self.nodes_hub = NodesHub(
             loop=self.loop,
@@ -165,7 +159,6 @@ class ForkingSimulation:
             )
 
         self.start_time = time_time()
-        self.loop.create_task(self.sample_forever())
         self.loop.run_until_complete(self.trigger_simulation_stop())
 
     def safe_run(self):
@@ -173,12 +166,6 @@ class ForkingSimulation:
             self.run()
         finally:
             self.logger.info('Releasing resources')
-
-            if (
-                self.forking_stats_file is not None and
-                not self.forking_stats_file.closed
-            ):
-                self.forking_stats_file.close()
 
             if (
                 self.network_stats_file is not None and
@@ -196,33 +183,6 @@ class ForkingSimulation:
         await asyncio_sleep(self.simulation_time)
         self.is_running = False
         await asyncio_sleep(4 * self.sample_time)
-
-    async def sample_forever(self):
-        self.logger.info('Starting sampling process')
-
-        self.is_running = True
-        while self.is_running:
-            await asyncio_sleep(self.sample_time)
-            self.sample()
-
-        self.logger.info('Stopping sampling process')
-
-    def sample(self):
-        for node_id, node in sample(list(enumerate(self.nodes)), self.sample_size):
-            time_delta = time_time() - self.start_time
-
-            tip_stats = defaultdict(int)
-            for tip in node.getchaintips():
-                tip_stats[tip['status']] += 1
-
-            # There's redundant data because it allows us to keep all the data
-            # in one single file, without having to perform "join" operations of
-            # any type.
-            self.forking_stats_file.write((
-                f'{time_delta},{node_id},{self.latency},'
-                f'{tip_stats["active"]},{tip_stats["valid-fork"]},'
-                f'{tip_stats["valid-headers"]},{tip_stats["headers-only"]}\n'
-            ).encode())
 
     def setup_directories(self):
         self.logger.info('Preparing temporary directories')
@@ -355,11 +315,6 @@ def main():
         default='network_stats.csv'
     )
     parser.add_argument(
-        '-f', '--forking-stats-file',
-        help='Where to output simulation results',
-        default='forking_stats.csv'
-    )
-    parser.add_argument(
         '-d', '--node-stats-directory',
         help='Where to output the nodes\' stats',
         default='./nodes_stats/'
@@ -369,13 +324,12 @@ def main():
     simulation = ForkingSimulation(
         loop=get_event_loop(),
         latency=0,
-        num_proposer_nodes=1,
-        num_relay_nodes=9,
+        num_proposer_nodes=5,
+        num_relay_nodes=45,
         simulation_time=120,
         sample_time=1,
         sample_size=10,
         graph_model='preferential_attachment',
-        forking_stats_file_name=cmd_args['forking_stats_file'],
         network_stats_file_name=cmd_args['network_stats_file'],
         nodes_stats_directory=cmd_args['node_stats_directory']
     )
