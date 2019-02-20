@@ -83,7 +83,6 @@ class ForkingSimulation:
             num_relay_nodes: int,
             simulation_time: float = 600,
             sample_time: float = 1,
-            sample_size: int = 10,
             network_stats_file_name: str,
             nodes_stats_directory: str,
             graph_model: str = 'preferential_attachment',
@@ -113,7 +112,6 @@ class ForkingSimulation:
 
         self.simulation_time = simulation_time
         self.sample_time = sample_time
-        self.sample_size = sample_size
 
         self.start_time = 0
 
@@ -328,7 +326,6 @@ def main():
         num_relay_nodes=45,
         simulation_time=120,
         sample_time=1,
-        sample_size=10,
         graph_model='preferential_attachment',
         network_stats_file_name=cmd_args['network_stats_file'],
         nodes_stats_directory=cmd_args['node_stats_directory']
