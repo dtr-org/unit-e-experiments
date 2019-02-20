@@ -39,7 +39,8 @@ def test_get_port_methods():
     nodes_hub = NodesHub(
         loop=Mock(spec=AbstractEventLoop),
         latency_policy=Mock(spec=LatencyPolicy),
-        nodes=[get_node_mock(node_id) for node_id in range(20)]
+        nodes=[get_node_mock(node_id) for node_id in range(20)],
+        network_stats_collector=Mock(spec=NetworkStatsCollector)
     )
 
     used_ports = set()
@@ -135,63 +136,67 @@ def test_register_p2p_command():
 def test_process_buffer():
     init_environment()
 
-    nodes_hub = NodesHub(
-        loop=Mock(spec=AbstractEventLoop),
-        latency_policy=Mock(spec=LatencyPolicy),
-        nodes=[get_node_mock(node_id) for node_id in range(5)]
-    )
+    with patch(
+        target='experiments.utils.nodes_hub.NodesHub.register_p2p_command',
+        new=CoroutineMock(spec=NodesHub.register_p2p_command)
+    ):
+        nodes_hub = NodesHub(
+            loop=Mock(spec=AbstractEventLoop),
+            latency_policy=Mock(spec=LatencyPolicy),
+            nodes=[get_node_mock(node_id) for node_id in range(5)],
+            network_stats_collector=Mock(spec=NetworkStatsCollector)
+        )
 
-    connection_mock = Mock(spec=Transport)
-    connection_mock.id = 1234
+        connection_mock = Mock(spec=Transport)
+        connection_mock.id = 1234
 
-    # Incomplete messages are not processed, the buffer remains untouched
-    assert (b'0123456789' == nodes_hub.process_buffer(
-        buffer=b'0123456789',  # Shorter than MSG_HEADER_LENGTH
-        transport=Mock(spec=Transport),
-        connection=connection_mock
-    ))
+        # Incomplete messages are not processed, the buffer remains untouched
+        assert (b'0123456789' == nodes_hub.process_buffer(
+            buffer=b'0123456789',  # Shorter than MSG_HEADER_LENGTH
+            transport=Mock(spec=Transport),
+            connection=connection_mock
+        ))
 
-    # Processing 'verack' message
-    buffer = (
-        b'\x00\x00\x00\x00verack\x00\x00\x00\x00\x00\x00' +
-        pack('<i', 0)[:4] +  # Msg length (without the header)
-        b'\x5d\xf6\xe0\xe2'  # Msg checksum
-        b'123456'            # A little bit of noise
-    )
-    processed_buffer = nodes_hub.process_buffer(
-        buffer=buffer,
-        transport=Mock(spec=Transport),
-        connection=connection_mock
-    )
-    # The message is consumed, the next incomplete message remains unprocessed
-    assert (b'123456' == processed_buffer)
+        # Processing 'verack' message
+        buffer = (
+            b'\x00\x00\x00\x00verack\x00\x00\x00\x00\x00\x00' +
+            pack('<i', 0)[:4] +  # Msg length (without the header)
+            b'\x5d\xf6\xe0\xe2'  # Msg checksum
+            b'123456'            # A little bit of noise
+        )
+        processed_buffer = nodes_hub.process_buffer(
+            buffer=buffer,
+            transport=Mock(spec=Transport),
+            connection=connection_mock
+        )
+        # The message is consumed, the next incomplete message remains unprocessed
+        assert (b'123456' == processed_buffer)
 
-    # Processing 'version' message
-    buffer = (
-        # Message Header
-        b'\xfa\xbf\xb5\xda'             # Network-type
-        b'version\x00\x00\x00\x00\x00'  # Command-type
-        b't\x00\x00\x00'                # Msg length (without the header)
-        b'\x1c\x1d\xce\xb0'             # Msg checksum
-
-        # Message Body
-        b'\x7f\x11\x01\x00\r\x84\x00\x00\x00\x00\x00\x00\xfcQa\\\x00\x00\x00'
-        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x84\x00\x00\x00\x00\x00'
-        b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-        b'\x00\x00Nz:+\x86\xbb\xef\xe4\x1e/Feuerland:0.16.3(testnode25)/\x00'
-        b'\x00\x00\x00\x01'
-    )
-    transport_mock = Mock(spec=Transport)
-    processed_buffer = nodes_hub.process_buffer(
-        buffer=buffer,
-        transport=transport_mock,
-        connection=connection_mock
-    )
-    assert (b'' == processed_buffer)
-    # The node is not listening connections, so it specifies port 0, hence we
-    # we pass the original message without any changes.
-    transport_mock.write.assert_called_once_with(buffer)
+        # Processing 'version' message
+        buffer = (
+            # Message Header
+            b'\xfa\xbf\xb5\xda'             # Network-type
+            b'version\x00\x00\x00\x00\x00'  # Command-type
+            b't\x00\x00\x00'                # Msg length (without the header)
+            b'\x1c\x1d\xce\xb0'             # Msg checksum
+            # Message Body
+            b'\x7f\x11\x01\x00\r\x84\x00\x00\x00\x00\x00\x00\xfcQa\\\x00\x00'
+            b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+            b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\r\x84\x00\x00'
+            b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+            b'\x00\x00\x00\x00\x00\x00Nz:+\x86\xbb\xef\xe4\x1e'
+            b'/Feuerland:0.16.3(testnode25)/\x00\x00\x00\x00\x01'
+        )
+        transport_mock = Mock(spec=Transport)
+        processed_buffer = nodes_hub.process_buffer(
+            buffer=buffer,
+            transport=transport_mock,
+            connection=connection_mock
+        )
+        assert (b'' == processed_buffer)
+        # The node is not listening connections, so it specifies port 0, hence we
+        # we pass the original message without any changes.
+        transport_mock.write.assert_called_once_with(buffer)
 
 
 @pytest.mark.asyncio
@@ -201,7 +206,8 @@ async def test_start_proxies(event_loop: AbstractEventLoop):
     nodes_hub = NodesHub(
         loop=event_loop,
         latency_policy=Mock(spec=LatencyPolicy),
-        nodes=[get_node_mock(node_id) for node_id in range(5)]
+        nodes=[get_node_mock(node_id) for node_id in range(5)],
+        network_stats_collector=Mock(spec=NetworkStatsCollector)
     )
     await nodes_hub.start_proxies()  # System Under Test
 
@@ -239,7 +245,8 @@ async def test_wait_for_pending_connections(event_loop: AbstractEventLoop):
         nodes_hub = NodesHub(
             loop=event_loop,
             latency_policy=Mock(spec=LatencyPolicy),
-            nodes=[get_node_mock(node_id) for node_id in range(5)]
+            nodes=[get_node_mock(node_id) for node_id in range(5)],
+            network_stats_collector=Mock(spec=NetworkStatsCollector)
         )
         # nodes_hub.connect_sender_to_proxy = fake_connect_sender_to_proxy
 
@@ -282,7 +289,8 @@ async def test_biconnect_nodes_as_linked_list(event_loop: AbstractEventLoop):
         nodes_hub = NodesHub(
             loop=event_loop,
             latency_policy=Mock(spec=LatencyPolicy),
-            nodes=[get_node_mock(node_id) for node_id in range(5)]
+            nodes=[get_node_mock(node_id) for node_id in range(5)],
+            network_stats_collector=Mock(spec=NetworkStatsCollector)
         )
         await nodes_hub.biconnect_nodes_as_linked_list()  # SUT
 
@@ -311,7 +319,8 @@ async def test_connect_nodes_graph(event_loop: AbstractEventLoop):
         nodes_hub = NodesHub(
             loop=event_loop,
             latency_policy=Mock(spec=LatencyPolicy),
-            nodes=[get_node_mock(node_id) for node_id in range(5)]
+            nodes=[get_node_mock(node_id) for node_id in range(5)],
+            network_stats_collector=Mock(spec=NetworkStatsCollector)
         )
         await nodes_hub.connect_nodes_graph(graph_edges)  # SUT
 
