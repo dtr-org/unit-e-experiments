@@ -44,6 +44,7 @@ from os.path import (
     realpath,
     exists as path_exists
 )
+from pathlib import Path
 from random import sample
 from shutil import rmtree
 from tempfile import mkdtemp
@@ -86,6 +87,7 @@ class ForkingSimulation:
             sample_size: int = 10,
             forking_stats_file_name: str,
             network_stats_file_name: str,
+            nodes_stats_directory: str,
             graph_model: str = 'preferential_attachment',
     ):
         if num_proposer_nodes < 0 or num_relay_nodes < 0:
@@ -126,6 +128,8 @@ class ForkingSimulation:
         self.network_stats_file: Optional[BytesIO] = None
         self.network_stats_file_name = network_stats_file_name
 
+        self.nodes_stats_directory = Path(nodes_stats_directory).resolve()
+
         self.define_network_topology()
         self.is_running = False
 
@@ -135,7 +139,11 @@ class ForkingSimulation:
 
         self.setup_chain()
         self.setup_nodes()
-        self.start_nodes()
+
+        try:
+            self.start_nodes()
+        except (OSError, AssertionError):
+            return  # Early shutdown
 
         # Opening network stats files
         self.network_stats_file = open(file=self.network_stats_file_name, mode='wb')
@@ -166,7 +174,10 @@ class ForkingSimulation:
         finally:
             self.logger.info('Releasing resources')
 
-            if not self.forking_stats_file.closed:
+            if (
+                self.forking_stats_file is not None and
+                not self.forking_stats_file.closed
+            ):
                 self.forking_stats_file.close()
 
             if (
@@ -175,7 +186,8 @@ class ForkingSimulation:
             ):
                 self.network_stats_file.close()
 
-            self.nodes_hub.close()
+            if self.nodes_hub is not None:
+                self.nodes_hub.close()
             self.stop_nodes()
             self.cleanup_directories()
             self.loop.close()
@@ -238,6 +250,9 @@ class ForkingSimulation:
         relay_args = ['-connect=0', '-listen=1', '-proposing=0']
         proposer_args = ['-connect=0', '-listen=1', '-proposing=1']
 
+        if not self.nodes_stats_directory.exists():
+            self.nodes_stats_directory.mkdir()
+
         self.nodes = [
             TestNode(
                 i=i,
@@ -245,7 +260,9 @@ class ForkingSimulation:
                 extra_args=(
                     proposer_args if i in self.proposer_node_ids
                     else relay_args
-                ),
+                ) + [f'''-stats-log-output-file={
+                    self.nodes_stats_directory.joinpath(f"stats_{i}.csv")
+                }'''],
                 rpchost=None,
                 timewait=None,
                 binary=None,
@@ -268,19 +285,28 @@ class ForkingSimulation:
 
     def start_nodes(self):
         self.logger.info('Starting nodes')
-        try:
-            for node in self.nodes:
+        for node_id, node in enumerate(self.nodes):
+            try:
                 node.start()
-            for node in self.nodes:
+            except OSError:
+                self.logger.critical(f'Node {node_id} failed to start')
+                raise
+        for node_id, node in enumerate(self.nodes):
+            try:
                 node.wait_for_rpc_connection()
-        except Exception:
-            self.stop_nodes()
-            raise
+            except AssertionError:
+                self.logger.critical(
+                    f'Impossible to establish RPC connection to node {node_id}'
+                )
+                raise
 
     def stop_nodes(self):
         self.logger.info('Stopping nodes')
         for node in self.nodes:
-            node.stop_node()
+            try:
+                node.stop_node()
+            except AssertionError:
+                continue
         for node in self.nodes:
             node.wait_until_stopped()
 
@@ -333,19 +359,25 @@ def main():
         help='Where to output simulation results',
         default='forking_stats.csv'
     )
+    parser.add_argument(
+        '-d', '--node-stats-directory',
+        help='Where to output the nodes\' stats',
+        default='./nodes_stats/'
+    )
     cmd_args = vars(parser.parse_args())
 
     simulation = ForkingSimulation(
         loop=get_event_loop(),
         latency=0,
-        num_proposer_nodes=5,
-        num_relay_nodes=45,
+        num_proposer_nodes=1,
+        num_relay_nodes=9,
         simulation_time=120,
         sample_time=1,
         sample_size=10,
         graph_model='preferential_attachment',
         forking_stats_file_name=cmd_args['forking_stats_file'],
-        network_stats_file_name=cmd_args['network_stats_file']
+        network_stats_file_name=cmd_args['network_stats_file'],
+        nodes_stats_directory=cmd_args['node_stats_directory']
     )
     simulation.safe_run()
 
