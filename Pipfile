@@ -5,6 +5,7 @@ verify_ssl = true
 
 [packages]
 psutil = "~=5.5"
+jupyter = "~=1.0"
 
 [dev-packages]
 asynctest = "~=0.12"
