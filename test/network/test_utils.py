@@ -19,7 +19,7 @@ from socket import (
 
 import pytest
 
-from experiments.utils.networking import get_pid_for_network_client
+from network.utils import get_pid_for_network_client
 
 
 @pytest.mark.asyncio

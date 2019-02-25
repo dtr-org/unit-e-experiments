@@ -5,7 +5,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 
-from experiments.utils.latencies import (
+from network.latencies import (
     ExponentiallyDistributedLatencyPolicy,
     StaticLatencyPolicy
 )

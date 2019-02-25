@@ -22,10 +22,10 @@ import test_framework.util as tf_util
 from asynctest.mock import CoroutineMock
 from test_framework.test_node import TestNode as FakeNode
 
-from experiments.utils.latencies import LatencyPolicy
-from experiments.utils.networking import get_pid_for_network_server
-from experiments.utils.network_stats import NetworkStatsCollector
-from experiments.utils.nodes_hub import (
+from network.latencies import LatencyPolicy
+from network.utils import get_pid_for_network_server
+from network.stats import NetworkStatsCollector
+from network.nodes_hub import (
     NodesHub,
     NUM_OUTBOUND_CONNECTIONS,
     ProxyInputConnection,
@@ -106,7 +106,7 @@ def test_register_p2p_command():
 
     # With missing node IDs
     with patch(
-        target='experiments.utils.nodes_hub.logger',
+        target='network.nodes_hub.logger',
         spec=Logger
     ) as logger_mock:
         # Missing sender ID
@@ -137,7 +137,7 @@ def test_process_buffer():
     init_environment()
 
     with patch(
-        target='experiments.utils.nodes_hub.NodesHub.register_p2p_command',
+        target='network.nodes_hub.NodesHub.register_p2p_command',
         new=CoroutineMock(spec=NodesHub.register_p2p_command)
     ):
         nodes_hub = NodesHub(
@@ -235,10 +235,10 @@ async def test_wait_for_pending_connections(event_loop: AbstractEventLoop):
         await asyncio_sleep(0)
 
     with patch(
-        target='experiments.utils.nodes_hub.asyncio_sleep',
+        target='network.nodes_hub.asyncio_sleep',
         new=fake_sleep  # We avoid sleeping, but need to switch context
     ), patch(
-        target='experiments.utils.nodes_hub.NodesHub.connect_sender_to_proxy',
+        target='network.nodes_hub.NodesHub.connect_sender_to_proxy',
         new=CoroutineMock(spec=NodesHub.connect_sender_to_proxy)
     ):
         nodes_hub = NodesHub(
@@ -279,10 +279,10 @@ async def test_biconnect_nodes_as_linked_list(event_loop: AbstractEventLoop):
     init_environment()
 
     with patch(
-        target='experiments.utils.nodes_hub.NodesHub.connect_nodes',
+        target='network.nodes_hub.NodesHub.connect_nodes',
         new=CoroutineMock(spec=NodesHub.connect_nodes)
     ) as fake_connect_nodes, patch(
-        target='experiments.utils.nodes_hub.NodesHub.wait_for_pending_connections',
+        target='network.nodes_hub.NodesHub.wait_for_pending_connections',
         new=CoroutineMock(spec=NodesHub.wait_for_pending_connections)
     ) as fake_wait_for_pending_connections:
         nodes_hub = NodesHub(
@@ -309,10 +309,10 @@ async def test_connect_nodes_graph(event_loop: AbstractEventLoop):
     graph_edges = {(0, 1), (1, 3), (3, 4), (4, 0)}
 
     with patch(
-            target='experiments.utils.nodes_hub.NodesHub.connect_nodes',
+            target='network.nodes_hub.NodesHub.connect_nodes',
             new=CoroutineMock(spec=NodesHub.connect_nodes)
     ) as fake_connect_nodes, patch(
-        target='experiments.utils.nodes_hub.NodesHub.wait_for_pending_connections',
+        target='network.nodes_hub.NodesHub.wait_for_pending_connections',
         new=CoroutineMock(spec=NodesHub.wait_for_pending_connections)
     ) as fake_wait_for_pending_connections:
         nodes_hub = NodesHub(

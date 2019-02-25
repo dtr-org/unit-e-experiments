@@ -26,9 +26,9 @@ from typing import (
     Union
 )
 
-from experiments.utils.latencies import LatencyPolicy
-from experiments.utils.networking import get_pid_for_network_client
-from experiments.utils.network_stats import NetworkStatsCollector
+from network.latencies import LatencyPolicy
+from network.utils import get_pid_for_network_client
+from network.stats import NetworkStatsCollector
 from test_framework.messages import hash256
 from test_framework.test_node import TestNode
 from test_framework.util import p2p_port
