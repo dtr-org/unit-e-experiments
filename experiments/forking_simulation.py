@@ -31,6 +31,7 @@ from asyncio import (
     get_event_loop,
 )
 from io import BytesIO
+from json import dumps as json_dumps
 from logging import (
     INFO,
     WARNING,
@@ -47,7 +48,6 @@ from pathlib import Path
 from random import sample
 from shutil import rmtree
 from tempfile import mkdtemp
-from time import time as time_time
 from typing import (
     List,
     Optional,
@@ -83,6 +83,7 @@ class ForkingSimulation:
             num_relay_nodes: int,
             simulation_time: float = 600,
             sample_time: float = 1,
+            block_time_seconds: int = 16,
             network_stats_file_name: str,
             nodes_stats_directory: str,
             graph_model: str = 'preferential_attachment',
@@ -95,35 +96,36 @@ class ForkingSimulation:
             raise RuntimeError('For now we only have 100 wallets with funds')
 
         self.logger = getLogger('ForkingSimulation')
-        self.loop = loop
 
-        self.latency = latency  # For now just a shared latency parameter.
+        # Node related settings
+        self.block_time_seconds = block_time_seconds
 
+        # Network related settings
         self.num_proposer_nodes = num_proposer_nodes
         self.num_relay_nodes = num_relay_nodes
         self.num_nodes = num_proposer_nodes + num_relay_nodes
-
         self.graph_model = graph_model
-
-        self.nodes: List[TestNode] = []
         self.graph_edges: Set[Tuple[int, int]] = set()
-        self.nodes_hub: Optional[NodesHub] = None
-        self.proposer_node_ids: List[int] = []
+        self.latency = latency  # For now just a shared latency parameter.
+        self.define_network_topology()
 
+        # Simulation related settings
         self.simulation_time = simulation_time
         self.sample_time = sample_time
 
-        self.start_time = 0
-
+        # Filesystem related settings
         self.cache_dir = normpath(dirname(realpath(__file__)) + '/cache')
         self.tmp_dir = ''
-
         self.network_stats_file: Optional[BytesIO] = None
         self.network_stats_file_name = network_stats_file_name
-
         self.nodes_stats_directory = Path(nodes_stats_directory).resolve()
 
-        self.define_network_topology()
+        # Required to interact with the network & the nodes
+        self.loop = loop
+        self.nodes: List[TestNode] = []
+        self.nodes_hub: Optional[NodesHub] = None
+        self.proposer_node_ids: List[int] = []
+
         self.is_running = False
 
     def run(self):
@@ -156,7 +158,6 @@ class ForkingSimulation:
                 regtest_mnemonics[idx]['mnemonics']
             )
 
-        self.start_time = time_time()
         self.loop.run_until_complete(self.trigger_simulation_stop())
 
     def safe_run(self, close_loop=True):
@@ -207,8 +208,15 @@ class ForkingSimulation:
             range(self.num_nodes), self.num_proposer_nodes
         )
 
-        relay_args = ['-connect=0', '-listen=1', '-proposing=0']
-        proposer_args = ['-connect=0', '-listen=1', '-proposing=1']
+        node_args = [
+            '-connect=0',
+            '-listen=1',
+            f'''-customchainparams=\'{json_dumps({
+                "block_time_seconds": self.block_time_seconds
+            })}\''''
+        ]
+        relay_args = node_args + ['-proposing=0']
+        proposer_args = node_args + ['-proposing=1']
 
         if not self.nodes_stats_directory.exists():
             self.nodes_stats_directory.mkdir()
