@@ -211,9 +211,9 @@ class ForkingSimulation:
         node_args = [
             '-connect=0',
             '-listen=1',
-            f'''-customchainparams=\'{json_dumps({
+            f'''-customchainparams={json_dumps({
                 "block_time_seconds": self.block_time_seconds
-            })}\''''
+            })}'''
         ]
         relay_args = node_args + ['-proposing=0']
         proposer_args = node_args + ['-proposing=1']
@@ -337,6 +337,7 @@ def main():
         simulation_time=120,
         sample_time=1,
         graph_model='preferential_attachment',
+        block_time_seconds=16,
         network_stats_file_name=cmd_args['network_stats_file'],
         nodes_stats_directory=cmd_args['node_stats_directory']
     )
