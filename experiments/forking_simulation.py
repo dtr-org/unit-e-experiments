@@ -128,8 +128,8 @@ class ForkingSimulation:
 
     def run(self):
         self.logger.info('Starting simulation')
-        self.setup_directories()
 
+        self.setup_directories()
         self.setup_chain()
         self.setup_nodes()
 
@@ -159,7 +159,7 @@ class ForkingSimulation:
         self.start_time = time_time()
         self.loop.run_until_complete(self.trigger_simulation_stop())
 
-    def safe_run(self):
+    def safe_run(self, close_loop=True):
         try:
             self.run()
         finally:
@@ -175,7 +175,9 @@ class ForkingSimulation:
                 self.nodes_hub.close()
             self.stop_nodes()
             self.cleanup_directories()
-            self.loop.close()
+
+            if close_loop:
+                self.loop.close()
 
     async def trigger_simulation_stop(self):
         await asyncio_sleep(self.simulation_time)
