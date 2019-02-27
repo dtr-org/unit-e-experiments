@@ -84,6 +84,7 @@ class ForkingSimulation:
             simulation_time: float = 600,
             sample_time: float = 1,
             block_time_seconds: int = 16,
+            block_stake_timestamp_interval_seconds: int = 1,
             network_stats_file_name: str,
             nodes_stats_directory: str,
             graph_model: str = 'preferential_attachment',
@@ -99,6 +100,7 @@ class ForkingSimulation:
 
         # Node related settings
         self.block_time_seconds = block_time_seconds
+        self.block_stake_timestamp_interval_seconds = block_stake_timestamp_interval_seconds
 
         # Network related settings
         self.num_proposer_nodes = num_proposer_nodes
@@ -212,7 +214,8 @@ class ForkingSimulation:
             '-connect=0',
             '-listen=1',
             f'''-customchainparams={json_dumps({
-                "block_time_seconds": self.block_time_seconds
+                "block_time_seconds": self.block_time_seconds,
+                "block_stake_timestamp_interval_seconds": self.block_stake_timestamp_interval_seconds
             })}'''
         ]
         relay_args = node_args + ['-proposing=0']
@@ -338,6 +341,7 @@ def main():
         sample_time=1,
         graph_model='preferential_attachment',
         block_time_seconds=16,
+        block_stake_timestamp_interval_seconds=1,
         network_stats_file_name=cmd_args['network_stats_file'],
         nodes_stats_directory=cmd_args['node_stats_directory']
     )
