@@ -27,7 +27,7 @@ from typing import (
 )
 
 from experiments.utils.latencies import LatencyPolicy
-from experiments.utils.networking import get_pid_for_local_port
+from experiments.utils.networking import get_pid_for_network_client
 from experiments.utils.network_stats import NetworkStatsCollector
 from test_framework.messages import hash256
 from test_framework.test_node import TestNode
@@ -364,7 +364,13 @@ class ProxyInputConnection(Protocol):
         try:
             transport_socket: socket_cls = transport._sock
             peer_port = transport_socket.getpeername()[1]
-            peer_pid = get_pid_for_local_port(port=peer_port)
+            server_port = transport_socket.getsockname()[1]
+            assert server_port == self.hub_ref.get_proxy_port(self.receiver_id)
+
+            peer_pid = get_pid_for_network_client(
+                client_port=peer_port,
+                server_port=server_port
+            )
             self.sender_id = self.hub_ref.pid2node_id[peer_pid]
 
             # We wait until ProxyOutputConnection is created to remove pair from
