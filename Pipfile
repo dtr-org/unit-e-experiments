@@ -4,8 +4,10 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [packages]
-psutil = "~=5.5"
 jupyter = "~=1.0"
+jupyterlab = "~=0.35"
+nest-asyncio = "~=1.0"
+psutil = "~=5.5"
 
 [dev-packages]
 asynctest = "~=0.12"
