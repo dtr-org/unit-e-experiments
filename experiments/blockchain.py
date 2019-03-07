@@ -119,25 +119,31 @@ class BlockHeader:
     def __init__(
             self, *,
             hash_prev_block: bytes,
-            hash_merkle_root: bytes,
+            stake_hash: bytes,
             timestamp: int,
-            compact_target: bytes
+            compact_target: bytes,
+            real_timestamp: Optional[int] = None
     ):
         assert 0 <= timestamp <= max_uint32_val
         assert 4 == len(compact_target)
         assert len(hash_prev_block) == 32
-        assert len(hash_merkle_root) == 32
+        assert len(stake_hash) == 32
 
         self.hash_prev_block = hash_prev_block
-        self.hash_merkle_root = hash_merkle_root
+        self.stake_hash = stake_hash
         self.timestamp = timestamp
+
+        if real_timestamp is None:
+            self.real_timestamp = timestamp
+        else:
+            self.real_timestamp = real_timestamp
 
         # Compact representation of the target hash.
         # Block's hash has to be lower than it's equivalent hash.
         self.compact_target = compact_target
 
-        self.block_hash: Optional[bytes] = None
-        self.block_coin: Optional[bytes] = None
+        self._kernel_hash: Optional[bytes] = None
+        self._coin_hash: Optional[bytes] = None
 
     @staticmethod
     def get_valid_block(
@@ -146,8 +152,9 @@ class BlockHeader:
             max_timestamp: int,
             time_step: int,
             hash_prev_block: bytes,
-            hash_merkle_root: bytes,
-            compact_target: bytes
+            stake_hash: bytes,
+            compact_target: bytes,
+            real_timestamp: Optional[int] = None
     ) -> Optional['BlockHeader']:
         """
         It returns a "valid" block, in the sense that its hash meets its target,
@@ -159,49 +166,47 @@ class BlockHeader:
 
         block = BlockHeader(
             hash_prev_block=hash_prev_block,
-            hash_merkle_root=hash_merkle_root,
+            stake_hash=stake_hash,
             timestamp=min_timestamp,
-            compact_target=compact_target
+            compact_target=compact_target,
+            real_timestamp=real_timestamp
         )
 
         hash_target = compact_target_to_uint256(block.compact_target)
 
         tries = 0
-        while block.hash() > hash_target and block.timestamp < max_timestamp:
+        while block.kernel_hash() > hash_target and block.timestamp < max_timestamp:
             tries += 1
-            block.change_timestamp(block.timestamp + time_step)
+            block.increase_timestamp(time_step)
 
-        if block.hash() > hash_target:
+        if block.kernel_hash() > hash_target:
             return None  # It was impossible to find a good enough block
 
         return block
 
-    def hash(self) -> bytes:
+    def kernel_hash(self) -> bytes:
         """
-        In our case, the block hash is equivalent to the kernel hash, because we
-        have no transactions, hence both hashes use the same inputs.
-
         The kernel hash is used to determine if we can propose or not.
         """
-        if self.block_hash is None:
-            self.block_hash = sha256(
+        if self._kernel_hash is None:
+            self._kernel_hash = sha256(
                 self.hash_prev_block +
-                self.hash_merkle_root +
+                self.stake_hash +
                 pack('>I', self.timestamp) +
                 self.compact_target
             ).digest()
-        return self.block_hash
+        return self._kernel_hash
 
-    def change_timestamp(self, timestamp: int):
-        assert timestamp > self.timestamp
-        self.timestamp = timestamp
-        self.block_hash = None  # We invalidate the previous hash
-        self.block_coin = None  # Same for the coin
+    def coin_hash(self) -> bytes:
+        if self._coin_hash is None:
+            self._coin_hash = sha256(self.kernel_hash()).digest()
+        return self._coin_hash
 
-    def coin(self):
-        if self.block_coin is None:
-            self.block_coin = sha256(self.hash()).digest()
-        return self.block_coin
+    def increase_timestamp(self, delta: int):
+        assert delta > 0
+        self.timestamp += delta
+        self._kernel_hash = None  # We invalidate the previous hash
+        self._coin_hash = None  # Same for the coin
 
 
 class Clock:
@@ -209,8 +214,8 @@ class Clock:
         assert first_time >= 0
         self.time = first_time
 
-    def advance_time(self):
-        self.time += 1
+    def advance_time(self, amount: int = 1):
+        self.time += amount
 
 
 class BlockChain:
@@ -252,7 +257,7 @@ class BlockChain:
         # The block comes from the past, not from the future
         assert genesis.timestamp <= clock.time
         # The hash is consistent with the target
-        assert genesis.hash() < compact_target_to_uint256(genesis.compact_target)
+        assert genesis.kernel_hash() < compact_target_to_uint256(genesis.compact_target)
 
         # Consensus Settings
         ########################################################################
@@ -297,7 +302,9 @@ class BlockChain:
 
     def add_block(self, block: BlockHeader, check_time_locks: bool = True):
         self.validate_block(block, check_time_locks=check_time_locks)
+        self.add_block_fast(block)
 
+    def add_block_fast(self, block: BlockHeader):
         self.blocks.append(block)
         self.height += 1
 
@@ -307,7 +314,7 @@ class BlockChain:
         #          malicious nodes in our simulations.
 
         # The new block depends on last one
-        assert block.hash_prev_block == self.blocks[-1].hash()
+        assert block.hash_prev_block == self.blocks[-1].kernel_hash()
 
         if check_time_locks:
             stake_maturing_period = self.stake_maturing_period
@@ -317,13 +324,13 @@ class BlockChain:
             stake_blocking_period = 0
 
         # An existent (& mature) coin was used as stake
-        assert block.hash_merkle_root in (
-            b.coin() for b in self.blocks[:len(self.blocks) - stake_maturing_period]
+        assert block.stake_hash in (
+            b.coin_hash() for b in self.blocks[:len(self.blocks) - stake_maturing_period]
         )
         # The stake is not blocked for being used recently
         if self.stake_blocking_period > 0:
-            assert block.hash_merkle_root not in (
-                b.hash_merkle_root for b in self.blocks[-stake_blocking_period:]
+            assert block.stake_hash not in (
+                b.stake_hash for b in self.blocks[-stake_blocking_period:]
             )
 
         # The block times are not "too crazy"
@@ -332,7 +339,7 @@ class BlockChain:
 
         # The "difficulty" is properly computed
         assert block.compact_target == self.get_next_compact_target()
-        assert block.hash() < compact_target_to_uint256(block.compact_target)
+        assert block.kernel_hash() < compact_target_to_uint256(block.compact_target)
 
     def median_past_timestamp(self) -> int:
         return int(round(median([
@@ -350,10 +357,9 @@ class BlockChain:
 
         if len(self.blocks) < 2:
             return self.blocks[-1].compact_target  # We don't have enough data
-        if self.clock.time % self.difficulty_adjustment_period != 0:
+        if self.height % self.difficulty_adjustment_period != 0:
             return self.blocks[-1].compact_target  # We just reuse the last one
 
-        # We now that self.difficulty_adjustment_window > 1
         blocks_window = self.blocks[-self.difficulty_adjustment_window:]
 
         # Greater than 1: too slow; Lower than 1: too fast
@@ -361,6 +367,9 @@ class BlockChain:
             blocks_window[-1].timestamp - blocks_window[0].timestamp,
             self.time_between_blocks * (len(blocks_window) - 1)
         )
+
+        if ratio[0] <= 0:  # The noisy don't allow us to adjust the difficulty
+            ratio = (1, 4)
 
         # This is needed because we are able to update the target every time we
         # add a new block, which is a different from what's in Bitcoin.
@@ -390,20 +399,30 @@ class BlockChain:
             self.blocks[block_index].compact_target
         ) + 1)
 
-    def get_valid_block(self, hash_merkle_root: bytes) -> Optional['BlockHeader']:
+    def get_valid_block(
+            self,
+            hash_merkle_root: bytes,
+            min_timestamp: Optional[int] = None
+    ) -> Optional['BlockHeader']:
         """
         Given a staked "coin", it tries to create a new contextually valid block.
         """
 
-        min_timestamp = self.block_time_mask * int(ceil(
-            (self.median_past_timestamp() + 1) / self.block_time_mask
-        ))
+        if min_timestamp is None:
+            min_timestamp = self.block_time_mask * int(ceil(
+                (self.median_past_timestamp() + 1) / self.block_time_mask
+            ))
+        else:
+            min_timestamp = self.block_time_mask * int(ceil(
+                min_timestamp / self.block_time_mask
+            ))
 
         return BlockHeader.get_valid_block(
             min_timestamp=min_timestamp,
             max_timestamp=self.clock.time + self.max_future_block_time_seconds,
             time_step=self.block_time_mask,
-            hash_prev_block=self.blocks[-1].hash(),
-            hash_merkle_root=hash_merkle_root,
-            compact_target=self.get_next_compact_target()
+            hash_prev_block=self.blocks[-1].kernel_hash(),
+            stake_hash=hash_merkle_root,
+            compact_target=self.get_next_compact_target(),
+            real_timestamp=self.clock.time
         )
