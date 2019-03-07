@@ -23,6 +23,6 @@ class NetworkStatsCollector:
             dst_node_id: Optional[int]
     ):
         self.output_file.write((
-            f'{time_time()},{src_node_id},{dst_node_id},{command_name},'
-            f'{command_size}\n'
+            f'{int(time_time()*1000)},{src_node_id},{dst_node_id},'
+            f'{command_name},{command_size}\n'
         ).encode())

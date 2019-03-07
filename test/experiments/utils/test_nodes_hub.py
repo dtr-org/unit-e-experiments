@@ -23,7 +23,7 @@ from asynctest.mock import CoroutineMock
 from test_framework.test_node import TestNode as FakeNode
 
 from experiments.utils.latencies import LatencyPolicy
-from experiments.utils.networking import get_pid_for_local_port
+from experiments.utils.networking import get_pid_for_network_server
 from experiments.utils.network_stats import NetworkStatsCollector
 from experiments.utils.nodes_hub import (
     NodesHub,
@@ -220,9 +220,8 @@ async def test_start_proxies(event_loop: AbstractEventLoop):
 
     # The proxy instances are listening as expected
     for node_id in range(5):
-        assert (test_pid == get_pid_for_local_port(
-            port=nodes_hub.get_proxy_port(node_id),
-            status='LISTEN'
+        assert (test_pid == get_pid_for_network_server(
+            server_port=nodes_hub.get_proxy_port(node_id),
         ))
 
     nodes_hub.close()

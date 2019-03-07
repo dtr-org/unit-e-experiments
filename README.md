@@ -30,3 +30,12 @@ https://opensource.org/licenses/MIT.
 2. Execute `pytest` to run the tests & the static checks.
 3. The experiments are in the `experiments` package, to run one of them just
    type `./experiments/experiment_name.py`.
+
+## Troubleshooting
+
+### Import Error while running Jupyter notebooks
+
+It turns out that Jupyter starts Python kernels at the path where the `*.ipynb`
+files are located. So, if you are using relative paths in your `.env` file, this
+is the most probable cause. It can be fixed just by using absolute paths
+instead.
