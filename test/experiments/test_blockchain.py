@@ -383,7 +383,7 @@ def test_blockchain_get_chain_work():
 
     for _ in range(64):
         # We use all the coins to stake
-        stakeable_blocks = blockchain_a.blocks[:100]
+        stakeable_blocks = blockchain_a.blocks
 
         min_timestamp = None  # We pass this to avoid repeating work
         candidates = []
@@ -413,7 +413,7 @@ def test_blockchain_get_chain_work():
         difficulty_adjustment_window=40
     )
     for _ in range(64):
-        # We only use half of the coins to stake
+        # We only use half of the coins to stake, that's why is weaker
         stakeable_blocks = blockchain_b.blocks[:max(1, len(blockchain_a.blocks) // 2)]
 
         min_timestamp = None  # We pass this to avoid repeating work
