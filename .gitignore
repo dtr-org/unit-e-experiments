@@ -5,7 +5,6 @@ Pipfile.lock
 cache/
 *.csv
 *.dat
-.ipynb_checkpoints/
 *.log
 wallet.dat*
 
