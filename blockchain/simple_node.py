@@ -180,13 +180,18 @@ class SimpleNode:
         all_chains = [self.main_chain] + self.alternative_chains
 
         for chain in all_chains:
-            if block.prev_block_hash == chain.blocks[-1].block_hash():
+            c_blocks = chain.blocks
+
+            if block.prev_block_hash == c_blocks[-1].block_hash():
                 chain.add_block(block)
                 return True
-            if block.block_hash() in [b.block_hash() for b in chain.blocks]:
+            if block.block_hash() in [b.block_hash() for b in c_blocks]:
                 return False  # We already know the block
 
-            if chain.blocks[block.coinstake_tx.height].prev_block_hash == block.prev_block_hash:
+            if (
+                len(c_blocks) > block.coinstake_tx.height and
+                c_blocks[block.coinstake_tx.height].prev_block_hash == block.prev_block_hash
+            ):
                 # Our block shares parent with an existent block
                 new_chain = chain.get_truncated_copy(block.coinstake_tx.height - 1)
                 new_chain.add_block(block)

@@ -156,3 +156,12 @@ def test_process_messages():
     assert node_b.main_chain is chain_b
 
     # Let's extend the fork, to force a re-org
+    assert node_d.try_to_propose()
+    clock.advance_time(2)
+    node_b.process_messages()
+
+    assert node_d.main_chain.height == 2
+    assert node_b.main_chain.height == 2
+    assert 0 == len(node_d.alternative_chains)  # Nothing changed here
+    assert 1 == len(node_b.alternative_chains)  # Nothing changed here
+    assert node_b.main_chain is not chain_b  # We had a re-org :) .
