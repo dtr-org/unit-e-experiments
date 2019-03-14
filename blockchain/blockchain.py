@@ -197,8 +197,8 @@ class BlockChain:
                 min_timestamp / self.block_time_mask
             ))
 
-        # This only works if we don't reuse coinstake transactions at different
-        # heights, which won't be the case since all nodes are well-behaved.
+        # This relies on the fact that once we create a coinstake transaction,
+        # we only put it into one block, so we do not have weird side effects.
         coinstake_tx.height = self.height + 1
         last_block = self.blocks[-1]
 
@@ -220,7 +220,7 @@ class BlockChain:
         new_chain.blocks = new_chain.blocks[:height + 1]
         new_chain.height = height
         new_chain.chain_work = (0, 0)
-        new_chain.next_compact_target = (0, b'\xff\xff\xff\xff')
+        new_chain.next_compact_target = (-1, b'\xff\xff\xff\xff')
 
         return new_chain
 
