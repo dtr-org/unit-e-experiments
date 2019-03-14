@@ -180,22 +180,33 @@ class BlockChain:
         ) + 1)
 
     def get_valid_block(
-            self, *,
-            coinstake_tx: CoinStakeTransaction,
-            min_timestamp: Optional[int] = None
+        self, *,
+        coinstake_tx: CoinStakeTransaction,
+        min_timestamp: Optional[int] = None,
+        greedy_proposal: bool = True
     ) -> Optional['Block']:
         """
         Given a staked "coin", it tries to create a new contextually valid block.
         """
 
-        if min_timestamp is None:
-            min_timestamp = self.block_time_mask * int(ceil(
-                (self.median_past_timestamp() + 1) / self.block_time_mask
-            ))
+        if greedy_proposal:
+            if min_timestamp is None:
+                min_timestamp = self.block_time_mask * int(ceil(
+                    (self.median_past_timestamp() + 1) / self.block_time_mask
+                ))
+            else:
+                # We pass through here when we're greedily exploring timestamps,
+                # and we already explored a subset of them before.
+                min_timestamp = self.block_time_mask * int(ceil(
+                    min_timestamp / self.block_time_mask
+                ))
         else:
-            min_timestamp = self.block_time_mask * int(ceil(
-                min_timestamp / self.block_time_mask
-            ))
+            # If we are not greedy, we just pass the current masked time
+            min_timestamp = self.block_time_mask * (
+                self.clock.time // self.block_time_mask
+            )
+            if min_timestamp <= self.median_past_timestamp():
+                return None  # This shouldn't happen, but who knows.
 
         # This relies on the fact that once we create a coinstake transaction,
         # we only put it into one block, so we do not have weird side effects.
@@ -211,7 +222,8 @@ class BlockChain:
             real_timestamp=self.clock.time
         ).try_to_be_valid(
             max_timestamp=self.clock.time + self.max_future_block_time_seconds,
-            time_mask=self.block_time_mask
+            time_mask=self.block_time_mask,
+            greedy_proposal=greedy_proposal
         )
 
     def get_truncated_copy(self, height: int) -> 'BlockChain':

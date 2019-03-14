@@ -103,7 +103,8 @@ class Block:
     def try_to_be_valid(
         self, *,
         max_timestamp: int,
-        time_mask: int
+        time_mask: int,
+        greedy_proposal: bool = True
     ) -> Optional['Block']:
         """
         Modifies the block's timestamp until it's valid, returns None if it's
@@ -119,12 +120,13 @@ class Block:
             stake = self.coinstake_tx.vin[0].amount
             custom_target = compact_target_to_bigint(self.compact_target) * stake
 
-        while (
-            int.from_bytes(self.kernel_hash(), 'big') >= custom_target and
-            self.timestamp < max_timestamp
-        ):
-            self.timestamp += time_mask
-            self._kernel_hash = None
+        if greedy_proposal:
+            while (
+                int.from_bytes(self.kernel_hash(), 'big') >= custom_target and
+                self.timestamp < max_timestamp
+            ):
+                self.timestamp += time_mask
+                self._kernel_hash = None
 
         if int.from_bytes(self.kernel_hash(), 'big') < custom_target:
             del self._kernel_hash_base  # Feeding the GC

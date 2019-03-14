@@ -25,6 +25,7 @@ class SimpleNode:
         chain: BlockChain,
         initial_coins: Set[Coin],
         is_proposer: bool = False,
+        greedy_proposal: bool = True,
         max_outbound_peers: int = 8,
         processing_time: float = 0.0
     ):
@@ -47,6 +48,9 @@ class SimpleNode:
         self.is_proposer = is_proposer
         self.processing_time = processing_time
         self.max_outbound_peers = max_outbound_peers
+
+        # It greedily explores the timestamps at the time of proposing, or not.
+        self.greedy_proposal = greedy_proposal
 
         # Node state - Network
         ########################################################################
@@ -85,12 +89,11 @@ class SimpleNode:
         msg: Block,
         source_id: int
     ):
-        # The incoming messages are processed by arrival time
-        # (processing time is constant)
+        # The incoming messages are processed by arrival time (processing time
+        # is constant)
         insort_left(
             self.incoming_messages,
-            (arrival_time + self.processing_time, msg),
-            source_id
+            (arrival_time + self.processing_time, msg, source_id)
         )
 
     def relay_message(
@@ -125,7 +128,10 @@ class SimpleNode:
         """
         num_relayed_messages = 0
 
-        while self.incoming_messages[0][0] <= self.clock.time:
+        while (
+            len(self.incoming_messages) > 0 and
+            self.incoming_messages[0][0] <= self.clock.time
+        ):
             msg_time, block, source_id = self.incoming_messages.pop(0)
 
             if not self.process_block(block):
@@ -150,6 +156,12 @@ class SimpleNode:
         return num_relayed_messages
 
     def process_block(self, block: Block) -> bool:
+        result = self.__process_block(block)
+        if result:
+            self.find_best_tip()
+        return result
+
+    def __process_block(self, block: Block) -> bool:
         """
         Tries to add the block to the main blockchain, or at least to one of the
         alternative chains that the node keeps in memory.
@@ -174,7 +186,7 @@ class SimpleNode:
             if block.block_hash() in [b.block_hash() for b in chain.blocks]:
                 return False  # We already know the block
 
-            if chain.blocks[block.coinstake_tx.height - 1].prev_block_hash == block.prev_block_hash:
+            if chain.blocks[block.coinstake_tx.height].prev_block_hash == block.prev_block_hash:
                 # Our block shares parent with an existent block
                 new_chain = chain.get_truncated_copy(block.coinstake_tx.height - 1)
                 new_chain.add_block(block)
@@ -185,29 +197,28 @@ class SimpleNode:
         return False
 
     def try_to_propose(self) -> bool:
-        all_chains = sorted(
-            [self.main_chain] + self.alternative_chains,
-            key=lambda x: x.get_chain_work(),
-            reverse=True
-        )
-
-        if self.main_chain is not all_chains[0]:
-            self.apply_reorganization(all_chains)
+        """
+        If the flag `is_proposer` is set, tries to propose a new block on top of
+        the tip.
+        """
+        if not self.is_proposer:
+            return False
 
         coinstake_txns = (
             CoinStakeTransaction(
                 # We just put the coin first, the rest doesn't matter,
                 # by default we want to combine all of them.
-                vin=[coin] + sorted(list(self.coins_cache.difference([coin])))
+                vin=[coin] + sorted(self.coins_cache.difference([coin]))
             )
-            for coin in self.coins_cache
+            for coin in sorted(self.coins_cache)
             if self.main_chain.is_stakeable(coin)
         )
 
         proposed = False
         for transaction in coinstake_txns:
             block = self.main_chain.get_valid_block(
-                coinstake_tx=transaction
+                coinstake_tx=transaction,
+                greedy_proposal=self.greedy_proposal
             )
             if block is not None:
                 self.main_chain.add_block(block)
@@ -221,6 +232,15 @@ class SimpleNode:
                 break
 
         return proposed
+
+    def find_best_tip(self):
+        all_chains = sorted(
+            [self.main_chain] + self.alternative_chains,
+            key=lambda x: x.get_chain_work(),
+            reverse=True
+        )
+        if self.main_chain is not all_chains[0]:
+            self.apply_reorganization(all_chains)
 
     def apply_reorganization(self, all_chains: List[BlockChain]):
         self.main_chain, self.alternative_chains = all_chains[0], all_chains[1:]

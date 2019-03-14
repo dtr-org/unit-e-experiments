@@ -53,7 +53,8 @@ def test_blockchain_get_chain_work():
                     b for b in (
                         blockchain_a.get_valid_block(
                             coinstake_tx=CoinStakeTransaction(vin=[coin]),
-                            min_timestamp=min_timestamp
+                            min_timestamp=min_timestamp,
+                            greedy_proposal=True
                         ) for coin in coins
                     )
                     if b is not None
@@ -97,7 +98,8 @@ def test_blockchain_get_chain_work():
                     b for b in (
                         blockchain_b.get_valid_block(
                             coinstake_tx=CoinStakeTransaction(vin=[coin]),
-                            min_timestamp=min_timestamp
+                            min_timestamp=min_timestamp,
+                            greedy_proposal=True
                         ) for coin in stakeable_coins
                     )
                     if b is not None
