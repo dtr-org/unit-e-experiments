@@ -194,15 +194,15 @@ class SimpleNode:
         if self.main_chain is not all_chains[0]:
             self.apply_reorganization(all_chains)
 
-        coinstake_txns = [
+        coinstake_txns = (
             CoinStakeTransaction(
                 # We just put the coin first, the rest doesn't matter,
                 # by default we want to combine all of them.
-                vin=[coin] + list(self.coins_cache.difference([coin]))
+                vin=[coin] + sorted(list(self.coins_cache.difference([coin])))
             )
             for coin in self.coins_cache
             if self.main_chain.is_stakeable(coin)
-        ]
+        )
 
         proposed = False
         for transaction in coinstake_txns:

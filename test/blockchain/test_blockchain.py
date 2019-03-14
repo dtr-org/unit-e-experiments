@@ -58,7 +58,7 @@ def test_blockchain_get_chain_work():
                     )
                     if b is not None
                 ],
-                key=lambda bb: bb.coinstake_tx.vin[0].as_sortable_tuple()
+                key=lambda bb: bb.coinstake_tx.vin[0]
             )
 
             blockchain_a.clock.advance_time(1)
@@ -102,7 +102,7 @@ def test_blockchain_get_chain_work():
                     )
                     if b is not None
                 ],
-                key=lambda bb: bb.coinstake_tx.vin[0].as_sortable_tuple()
+                key=lambda bb: bb.coinstake_tx.vin[0]
             )
 
             blockchain_b.clock.advance_time(1)

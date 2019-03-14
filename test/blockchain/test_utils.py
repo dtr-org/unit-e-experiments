@@ -13,7 +13,7 @@ from blockchain.utils import (
 )
 
 
-def test_compact_target_to_hash():
+def test_compact_target_to_uint256():
     # 1st case: 255 leading zeroes
     test_hash = compact_target_to_uint256(b'\x00\x00\x00\x00')
     for i in range(31):
@@ -47,7 +47,7 @@ def test_compact_target_to_hash():
         assert b'\xff' * (32 - byte_index - 3) == test_hash[byte_index + 3:]
 
 
-def test_hash_to_compact_target():
+def test_uint256_to_compact_target():
     for num_leading_zeros in range(232):
         compact_target = pack('B', 255 - num_leading_zeros) + b'xyz'
         test_hash = compact_target_to_uint256(compact_target)

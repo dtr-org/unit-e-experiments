@@ -7,7 +7,7 @@
 
 from hashlib import sha256
 from struct import pack
-from typing import List, NamedTuple, Optional, Tuple
+from typing import List, NamedTuple, Optional
 
 from blockchain import zeroes_uint256
 
@@ -34,14 +34,6 @@ class Coin(NamedTuple):
     @staticmethod
     def genesis() -> 'Coin':
         return Coin(amount=0, height=0, txo=TransactionOutput.genesis())
-
-    def as_sortable_tuple(self) -> Tuple[int, int, TransactionOutput]:
-        """It just reverses the natural ordering applied to amount."""
-        return (
-            -self.amount,  # descending
-            self.height,   # ascending
-            self.txo       # ascending
-        )
 
 
 class CoinStakeTransaction:
@@ -106,6 +98,8 @@ class CoinStakeTransaction:
         """
           - The 0th coin (except in genesis) will be the reward.
           - The 1st coin (except in genesis) will be the stake combination.
+          - Whenever we have more coins (just at genesis for this simulations),
+            their positions mean nothing.
         """
         if self._all_coins is None:
             self._all_coins = [
