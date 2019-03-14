@@ -72,7 +72,7 @@ class BlockChain:
 
         # Consensus Settings
         ########################################################################
-        # How old (in blocks) has to be a reward to be staked
+        # How old (in blocks) a reward has to be to be staked
         self.stake_maturing_period = stake_maturing_period
 
         # For how long do we forbid a coin to be staked again after proposing
@@ -104,13 +104,14 @@ class BlockChain:
         # Chain State
         ########################################################################
         self.blocks = [genesis]
-        self.height = 1
+        self.height = 0
 
-        # Caches the next target for height + 1, stored as (height, target)
-        self.next_compact_target = (0, b'\xff\xff\xff\xff')
+        # Caches the target for height, stored as (height, target)
+        # We init height at -1 to invalidate this first cached value.
+        self.next_compact_target = (-1, b'\xff\xff\xff\xff')
 
         # Tracks chain work (height, acc_work), used in fork choice rule.
-        self.chain_work = (0, 0)
+        self.chain_work = (0, 0)  # We consider the genesis adds no work
 
     def add_block(self, block: Block):
         # We don't try to validate anything, just to save time
@@ -144,7 +145,7 @@ class BlockChain:
             self.time_between_blocks * (len(blocks_window) - 1)
         )
 
-        if ratio[0] <= 0:  # The noisy don't allow us to adjust the difficulty
+        if ratio[0] <= 0:  # The noise does not allow us to adjust the difficulty
             ratio = (1, 4)
 
         # This is needed because we are able to update the target every time we
@@ -163,16 +164,19 @@ class BlockChain:
         return self.next_compact_target[1]
 
     def get_chain_work(self) -> int:
-        for h in range(self.chain_work[0], self.height):  # h = block_height - 1
+        if self.chain_work[0] < self.height:
             self.chain_work = (
-                h + 1,
-                self.chain_work[1] + self.get_block_work(h)
+                self.height,
+                self.chain_work[1] + sum(
+                    self.get_block_work(h)
+                    for h in range(self.chain_work[0] + 1, self.height + 1)
+                )
             )
         return self.chain_work[1]
 
-    def get_block_work(self, block_index: int) -> int:
+    def get_block_work(self, height: int) -> int:
         return 2**256 // (compact_target_to_bigint(
-            self.blocks[block_index].compact_target
+            self.blocks[height].compact_target
         ) + 1)
 
     def get_valid_block(
@@ -213,7 +217,7 @@ class BlockChain:
     def get_truncated_copy(self, height: int) -> 'BlockChain':
         new_chain = shallow_copy(self)
 
-        new_chain.blocks = new_chain.blocks[:height]
+        new_chain.blocks = new_chain.blocks[:height + 1]
         new_chain.height = height
         new_chain.chain_work = (0, 0)
         new_chain.next_compact_target = (0, b'\xff\xff\xff\xff')
@@ -221,7 +225,7 @@ class BlockChain:
         return new_chain
 
     def is_stakeable(self, coin: Coin) -> bool:
-        if coin.height == 1:
+        if coin.height == 0:
             return True  # The coins from genesis have no restrictions
 
         if 0 == coin.txo.out_idx:

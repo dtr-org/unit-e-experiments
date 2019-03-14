@@ -112,7 +112,7 @@ class Block:
         Relies on the assumption that the initial timestamp is compatible with
         the give time_mask value.
         """
-        if self.coinstake_tx.height == 1:
+        if self.coinstake_tx.height == 0:
             # To avoid setting custom_target to 0 at genesis
             custom_target = compact_target_to_bigint(self.compact_target)
         else:

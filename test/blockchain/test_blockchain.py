@@ -23,7 +23,10 @@ def test_clock():
 
 
 def test_blockchain_get_chain_work():
-    # When we have more proposers staking, the difficulty increases
+    # When we have more proposers staking, the difficulty increases.
+    # Notice that in this test, the proposers are "greedy", they try to propose
+    # exploring the whole set of valid timestamps.
+
     genesis_block = Block.genesis(
         timestamp=256,
         compact_target=b'\xff\xff\xff\xff'
@@ -41,7 +44,7 @@ def test_blockchain_get_chain_work():
     )
 
     coins = set(genesis_block.coinstake_tx.get_all_coins())
-    for _ in range(64):
+    for _ in range(128):
         min_timestamp = None  # We pass this to avoid repeating work
         candidates = []
         while 0 == len(candidates):
@@ -80,7 +83,7 @@ def test_blockchain_get_chain_work():
         difficulty_adjustment_window=40
     )
     coins = set(genesis_block.coinstake_tx.get_all_coins())
-    for _ in range(64):
+    for _ in range(128):
         stakeable_coins = sorted(
             list(coins),
             key=lambda c: c.height  # Older coins first

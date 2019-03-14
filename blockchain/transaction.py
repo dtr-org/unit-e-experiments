@@ -76,7 +76,7 @@ class CoinStakeTransaction:
 
     @staticmethod
     def genesis(vout: Optional[List[int]] = None) -> 'CoinStakeTransaction':
-        return CoinStakeTransaction(vin=[Coin.genesis()], vout=vout, height=1)
+        return CoinStakeTransaction(vin=[Coin.genesis()], vout=vout, height=0)
 
     def tx_hash(self) -> bytes:
         if self._tx_hash is None:
