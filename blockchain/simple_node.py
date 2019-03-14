@@ -138,11 +138,8 @@ class SimpleNode:
                 continue
 
             # We try to check if we can 'un-orphan' some block...
-            recovered_orphan = True
-            while recovered_orphan:
-                recovered_orphan = False
-                for orphan in self.orphan_blocks:
-                    recovered_orphan = self.process_block(orphan) or recovered_orphan
+            self.process_orphans()
+            self.find_best_tip()
 
             self.relay_message(
                 msg=block,
@@ -155,13 +152,19 @@ class SimpleNode:
 
         return num_relayed_messages
 
-    def process_block(self, block: Block) -> bool:
-        result = self.__process_block(block)
-        if result:
-            self.find_best_tip()
-        return result
+    def process_orphans(self):
+        try_to_save_orphans = True
+        while try_to_save_orphans:
+            try_to_save_orphans = False
+            recovered_orphans = set()
+            for orphan in self.orphan_blocks:
+                added = self.process_block(orphan)
+                if added:
+                    recovered_orphans.add(orphan)
+                try_to_save_orphans = added or try_to_save_orphans
+            self.orphan_blocks.difference_update(recovered_orphans)
 
-    def __process_block(self, block: Block) -> bool:
+    def process_block(self, block: Block) -> bool:
         """
         Tries to add the block to the main blockchain, or at least to one of the
         alternative chains that the node keeps in memory.

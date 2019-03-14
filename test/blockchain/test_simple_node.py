@@ -81,6 +81,8 @@ def test_process_messages():
     node_a.add_outbound_peer(node_b)
     node_b.add_outbound_peer(node_c)
 
+    # Let's test message propagation
+    ############################################################################
     clock.advance_time(1)  # time == 1
 
     assert node_a.main_chain.height == 0
@@ -125,6 +127,7 @@ def test_process_messages():
     assert node_c.main_chain.height == 1  # The message "arrived" at time=4.2
 
     # We'll create some forks now, but let's check some pre-conditions before
+    ############################################################################
     assert 0 == len(node_a.alternative_chains)
     assert 0 == len(node_b.alternative_chains)
     assert 0 == len(node_c.alternative_chains)
@@ -144,24 +147,55 @@ def test_process_messages():
     assert node_d.try_to_propose()  # Let's create a fork (from b's perspective)
     chain_b = node_b.main_chain  # We cache the reference just in case of re-org
 
-    clock.advance_time(2)
+    clock.advance_time(2)  # time == 7
     node_b.process_messages()
 
     assert node_d.main_chain.height == 1
     assert node_b.main_chain.height == 1  # the height was not changed
-    assert 0 == len(node_d.alternative_chains)  # d does not see any fork
-    assert 1 == len(node_b.alternative_chains)  # We have a fork
+    assert len(node_d.alternative_chains) == 0  # d does not see any fork
+    assert len(node_b.alternative_chains) == 1  # We have a fork
 
     # node_b didn't do re-org, because chain work is the same for both forks
     assert node_b.main_chain is chain_b
 
     # Let's extend the fork, to force a re-org
+    ############################################################################
     assert node_d.try_to_propose()
-    clock.advance_time(2)
+    clock.advance_time(2)  # time == 9
     node_b.process_messages()
 
     assert node_d.main_chain.height == 2
     assert node_b.main_chain.height == 2
-    assert 0 == len(node_d.alternative_chains)  # Nothing changed here
-    assert 1 == len(node_b.alternative_chains)  # Nothing changed here
+    assert len(node_d.alternative_chains) == 0  # Nothing changed here
+    assert len(node_b.alternative_chains) == 1  # Nothing changed here
     assert node_b.main_chain is not chain_b  # We had a re-org :) .
+
+    # Now we'll check that SimpleNode is able to deal with orphan blocks
+    ############################################################################
+    assert len(node_a.orphan_blocks) == 0
+
+    # node_a will receive a message from nowhere...
+    node_a.receive_message(
+        arrival_time=9.5,
+        msg=node_d.main_chain.blocks[-1],  # node_a won't know its parent,
+        source_id=node_d.node_id
+    )
+    clock.advance_time(1)  # time == 10
+
+    node_a.process_messages()
+    assert len(node_a.orphan_blocks) == 1  # as expected, the block is orphan
+    assert len(node_a.alternative_chains) == 0  # Nothing changed here
+    assert node_a.main_chain.height == 1  # Nothing changed here
+
+    # node_a receives the missing parent
+    node_a.receive_message(
+        arrival_time=10.5,
+        msg=node_d.main_chain.blocks[-2],  # this is the orphan's parent
+        source_id=node_d.node_id
+    )
+    clock.advance_time(1)  # time == 11
+
+    node_a.process_messages()
+    assert len(node_a.orphan_blocks) == 0  # No orphans anymore
+    assert len(node_a.alternative_chains) == 1  # Now we have a fork
+    assert node_a.main_chain.height == 2  # And did also a re-org
