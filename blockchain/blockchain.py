@@ -240,6 +240,8 @@ class BlockChain:
         if coin.height == 0:
             return True  # The coins from genesis have no restrictions
 
+        # We don't check if the coin comes from a coinbase transaction because
+        # that's always the case in our simulations.
         if 0 == coin.txo.out_idx:
             # The coin is a reward
             return coin.height <= self.height - self.stake_maturing_period
