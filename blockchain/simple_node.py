@@ -26,6 +26,7 @@ class SimpleNode:
         initial_coins: Set[Coin],
         is_proposer: bool = False,
         greedy_proposal: bool = True,
+        max_num_tips: int = 10,
         max_outbound_peers: int = 8,
         processing_time: float = 0.0
     ):
@@ -48,6 +49,7 @@ class SimpleNode:
         self.is_proposer = is_proposer
         self.processing_time = processing_time
         self.max_outbound_peers = max_outbound_peers
+        self.max_num_tips = max_num_tips
 
         # It greedily explores the timestamps at the time of proposing, or not.
         self.greedy_proposal = greedy_proposal
@@ -103,7 +105,7 @@ class SimpleNode:
         discard_peers: Collection[int] = ()
     ):
         if send_time is None:
-            send_time = self.clock.time
+            send_time = self.clock.get_time()
 
         for peer in self.outbound_peers:
             if peer.node_id in discard_peers:
@@ -130,7 +132,7 @@ class SimpleNode:
 
         while (
             len(self.incoming_messages) > 0 and
-            self.incoming_messages[0][0] <= self.clock.time
+            self.incoming_messages[0][0] <= self.clock.get_time()
         ):
             msg_time, block, source_id = self.incoming_messages.pop(0)
 
@@ -184,13 +186,16 @@ class SimpleNode:
 
         for chain in all_chains:
             c_blocks = chain.blocks
-
             if block.prev_block_hash == c_blocks[-1].block_hash():
                 chain.add_block(block)
                 return True
             if block.block_hash() in [b.block_hash() for b in c_blocks]:
                 return False  # We already know the block
 
+        # This has to be in a separated loop to ensure that we detect repeated
+        # blocks.
+        for chain in all_chains:
+            c_blocks = chain.blocks
             if (
                 len(c_blocks) > block.coinstake_tx.height and
                 c_blocks[block.coinstake_tx.height].prev_block_hash == block.prev_block_hash
@@ -246,7 +251,7 @@ class SimpleNode:
             [self.main_chain] + self.alternative_chains,
             key=lambda x: x.get_chain_work(),
             reverse=True
-        )
+        )[:self.max_num_tips]
         if self.main_chain is not all_chains[0]:
             self.apply_reorganization(all_chains)
 

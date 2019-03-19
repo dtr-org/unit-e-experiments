@@ -55,6 +55,10 @@ def compact_target_to_bigint(compact_target: bytes) -> int:
     return int.from_bytes(compact_target_to_uint256(compact_target), 'big')
 
 
+def bigint_to_compact_target(bigint: int) -> bytes:
+    return uint256_to_compact_target(int.to_bytes(bigint, 32, 'big'))
+
+
 def uint256_to_compact_target(hash_target: bytes) -> bytes:
     """
     Transforms a 256bits hash into an equivalent compact target
