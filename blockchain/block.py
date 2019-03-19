@@ -13,7 +13,6 @@ from blockchain import max_uint256_val, zeroes_uint256
 from blockchain.transaction import CoinStakeTransaction
 from blockchain.utils import (
     compact_target_to_bigint,
-    compact_target_to_uint256,
     bigint_to_compact_target
 )
 
@@ -117,7 +116,7 @@ class Block:
         Relies on the assumption that the initial timestamp is compatible with
         the give time_mask value.
         """
-        if self.coinstake_tx.height == 0:
+        if self.coinstake_tx.height == 0 and self.coinstake_tx.vin[0].amount == 0:
             # To avoid setting custom_target to 0 at genesis
             custom_target = compact_target_to_bigint(self.compact_target)
         else:
@@ -152,9 +151,18 @@ class Block:
         self.compact_target = bigint_to_compact_target(
             min(
                 max_uint256_val,
-                int.from_bytes(self.kernel_hash(), 'big') +
+                (
+                    int.from_bytes(self.kernel_hash(), 'big') //
+                    max(1, self.coinstake_tx.vin[0].amount)
+                ) +
                 (2 ** 24)  # From the compact target's "mantissa" size.
             )
         )
-        assert self.kernel_hash() < compact_target_to_uint256(self.compact_target)
+        assert self.is_valid()
         return self
+
+    def is_valid(self) -> bool:
+        return int.from_bytes(self.kernel_hash(), 'big') < (
+            compact_target_to_bigint(self.compact_target) *
+            max(1, self.coinstake_tx.vin[0].amount)
+        )

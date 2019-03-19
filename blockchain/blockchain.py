@@ -17,7 +17,6 @@ from blockchain.block import Block
 from blockchain.transaction import Coin, CoinStakeTransaction
 from blockchain.utils import (
     compact_target_to_bigint,
-    compact_target_to_uint256,
     uint256_to_compact_target
 )
 
@@ -89,7 +88,7 @@ class BlockChain:
         # The block comes from the past, not from the future
         assert genesis.timestamp <= clock.get_time()
         # The hash is consistent with the target
-        assert genesis.kernel_hash() < compact_target_to_uint256(genesis.compact_target)
+        assert genesis.is_valid()
 
         # Consensus Settings
         ########################################################################
