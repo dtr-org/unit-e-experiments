@@ -57,14 +57,14 @@ from typing import (
 
 import test_framework.util as tf_util
 
-from experiments.utils.graph import (
+from experiments.graph import (
     enforce_nodes_reconnections,
     ensure_one_inbound_connection_per_node,
     create_directed_graph,
 )
-from experiments.utils.latencies import StaticLatencyPolicy
-from experiments.utils.network_stats import NetworkStatsCollector
-from experiments.utils.nodes_hub import (
+from network.latencies import StaticLatencyPolicy
+from network.stats import NetworkStatsCollector
+from network.nodes_hub import (
     NodesHub,
     NUM_INBOUND_CONNECTIONS,
     NUM_OUTBOUND_CONNECTIONS

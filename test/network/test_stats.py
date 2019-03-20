@@ -8,7 +8,7 @@
 from typing import BinaryIO
 from unittest.mock import Mock, patch
 
-from experiments.utils.network_stats import NetworkStatsCollector
+from network.stats import NetworkStatsCollector
 
 
 def test_network_stats_collector():
@@ -16,7 +16,7 @@ def test_network_stats_collector():
     network_stats_collector = NetworkStatsCollector(output_file=mocked_file)
 
     with patch(
-        target='experiments.utils.network_stats.time_time',
+        target='network.stats.time_time',
         new=lambda: 1549551476.292045
     ):
         network_stats_collector.register_event(

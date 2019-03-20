@@ -7,7 +7,7 @@
 
 from collections import defaultdict
 
-from experiments.utils.graph import (
+from experiments.graph import (
     compute_degrees,
     create_static_graph,
     create_growing_graph,
