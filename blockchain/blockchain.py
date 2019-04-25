@@ -78,7 +78,7 @@ class BlockChain:
         assert 0 <= stake_maturing_period <= 150
         assert 0 <= stake_blocking_period <= 150
         assert 1 <= num_blocks_for_median_timestamp <= 20
-        assert 16 <= max_future_block_time_seconds <= 7200
+        assert 1 <= max_future_block_time_seconds <= 7200
         assert 1 <= difficulty_adjustment_period <= 8192
         assert 6 <= difficulty_adjustment_window <= 8192
         assert 4 <= time_between_blocks <= 120

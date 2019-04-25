@@ -28,7 +28,8 @@ class SimpleNode:
         greedy_proposal: bool = True,
         max_num_tips: int = 10,
         max_outbound_peers: int = 8,
-        processing_time: float = 0.0
+        processing_time: float = 0.0,
+        coins_snapshots_spacing: int = 20
     ):
         assert max_outbound_peers > 0
 
@@ -50,6 +51,10 @@ class SimpleNode:
         self.processing_time = processing_time
         self.max_outbound_peers = max_outbound_peers
         self.max_num_tips = max_num_tips
+
+        # How frequently the node will generate coins snapshots to avoid
+        # rescanning the whole chain after re-orgs.
+        self.coins_snapshots_spacing = coins_snapshots_spacing
 
         # It greedily explores the timestamps at the time of proposing, or not.
         self.greedy_proposal = greedy_proposal
@@ -73,7 +78,7 @@ class SimpleNode:
         self.alternative_chains: List[BlockChain] = []
 
         # Coins used by the node when it starts
-        self.initial_coins = initial_coins
+        self.coins_snapshots = {chain.height: initial_coins}
 
         # Current set of coins
         self.coins_cache: Set[Coin] = initial_coins.copy()
@@ -240,6 +245,8 @@ class SimpleNode:
                 # We have to update the coins cache
                 self.coins_cache.difference_update(transaction.vin)
                 self.coins_cache.update(transaction.get_all_coins())
+                if block.coinstake_tx.height % self.coins_snapshots_spacing == 0:
+                    self.coins_snapshots[block.coinstake_tx.height] = self.coins_cache.copy()
 
                 proposed = True
                 break
@@ -257,13 +264,24 @@ class SimpleNode:
 
     def apply_reorganization(self, all_chains: List[BlockChain]):
         self.main_chain, self.alternative_chains = all_chains[0], all_chains[1:]
-        self.coins_cache = self.initial_coins.copy()
 
-        # Now we'll traverse the whole chain history to reconstruct our cache.
-        # TODO: Notice that this could be optimized to avoid performing the full
-        #       traversal...
-        for block in self.main_chain.blocks:
+        # We get rid of some old snapshots...
+        height_threshold = self.main_chain.height - 4 * self.coins_snapshots_spacing
+        if max(self.coins_snapshots.keys()) > height_threshold:
+            self.coins_snapshots = {
+                height: snapshot
+                for height, snapshot in self.coins_snapshots.items()
+                if height >= height_threshold
+            }
+        snapshot_height = min(self.coins_snapshots.keys())
+        self.coins_cache = self.coins_snapshots[snapshot_height].copy()
+
+        for block in self.main_chain.blocks[snapshot_height + 1:]:
             if 0 == len(self.coins_cache.intersection(block.coinstake_tx.vin)):
+                if block.coinstake_tx.height % self.coins_snapshots_spacing == 0:
+                    self.coins_snapshots[block.coinstake_tx.height] = self.coins_cache.copy()
                 continue
             self.coins_cache.difference_update(block.coinstake_tx.vin)
             self.coins_cache.update(block.coinstake_tx.get_all_coins())
+            if block.coinstake_tx.height % self.coins_snapshots_spacing == 0:
+                self.coins_snapshots[block.coinstake_tx.height] = self.coins_cache.copy()
