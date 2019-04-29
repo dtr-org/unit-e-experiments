@@ -247,7 +247,7 @@ class NodesHub:
             buffer: bytes,
             transport: Transport,
             connection: Union['ProxyInputConnection', 'ProxyOutputConnection']
-    ):
+    ) -> bytes:
         """
         This function helps the hub to impersonate nodes by modifying 'version'
         messages changing the "from" addresses.
@@ -261,7 +261,7 @@ class NodesHub:
 
             # We wait until we have the full message
             if len(buffer) < MSG_HEADER_LENGTH + msglen:
-                return
+                return buffer
 
             command = buffer[4:4 + 12].split(b'\x00', 1)[0]
             logger.debug(
