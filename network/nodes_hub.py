@@ -160,6 +160,8 @@ class NodesHub:
         self.state = 'closing'
         logger.info('Shutting down NodesHub instance')
 
+        self.network_stats_collector.close()
+
         for server in self.proxy_servers:
             server.close()
             if server.sockets is not None:

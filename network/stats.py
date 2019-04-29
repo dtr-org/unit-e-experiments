@@ -14,6 +14,7 @@ class NetworkStatsCollector:
 
     def __init__(self, output_file: BinaryIO):
         self.output_file = output_file
+        self.running = True
 
     def register_event(
             self,
@@ -22,7 +23,22 @@ class NetworkStatsCollector:
             src_node_id: Optional[int],
             dst_node_id: Optional[int]
     ):
+        if not self.running:
+            return
+
         self.output_file.write((
             f'{int(time_time()*1000)},{src_node_id},{dst_node_id},'
             f'{command_name},{command_size}\n'
         ).encode())
+
+    def close(self):
+        if not self.running:
+            return
+
+        self.running = False
+
+        if (
+            self.output_file is not None and
+            not self.output_file.closed
+        ):
+            self.output_file.close()

@@ -48,7 +48,6 @@ from random import sample
 from shutil import rmtree
 from tempfile import mkdtemp
 from typing import (
-    BinaryIO,
     List,
     Optional,
     Set,
@@ -80,6 +79,7 @@ class ForkingSimulation:
             loop: AbstractEventLoop,
             latency: float,
             num_proposer_nodes: int,
+            num_validator_nodes: int,
             num_relay_nodes: int,
             simulation_time: float = 600,
             sample_time: float = 1,
@@ -104,8 +104,9 @@ class ForkingSimulation:
 
         # Network related settings
         self.num_proposer_nodes = num_proposer_nodes
+        self.num_validator_nodes = num_validator_nodes
         self.num_relay_nodes = num_relay_nodes
-        self.num_nodes = num_proposer_nodes + num_relay_nodes
+        self.num_nodes = num_proposer_nodes + num_validator_nodes + num_relay_nodes
         self.graph_model = graph_model
         self.graph_edges: Set[Tuple[int, int]] = set()
         self.latency = latency  # For now just a shared latency parameter.
@@ -118,7 +119,6 @@ class ForkingSimulation:
         # Filesystem related settings
         self.cache_dir = normpath(dirname(realpath(__file__)) + '/cache')
         self.tmp_dir = ''
-        self.network_stats_file: Optional[BinaryIO] = None
         self.network_stats_file_name = network_stats_file_name
         self.nodes_stats_directory = Path(nodes_stats_directory).resolve()
 
@@ -127,6 +127,7 @@ class ForkingSimulation:
         self.nodes: List[TestNode] = []
         self.nodes_hub: Optional[NodesHub] = None
         self.proposer_node_ids: List[int] = []
+        self.validator_node_ids: List[int] = []
 
         self.is_running = False
 
@@ -142,14 +143,13 @@ class ForkingSimulation:
         except (OSError, AssertionError):
             return False  # Early shutdown
 
-        # Opening network stats files
-        self.network_stats_file = open(file=self.network_stats_file_name, mode='wb')
-
         self.nodes_hub = NodesHub(
             loop=self.loop,
             latency_policy=StaticLatencyPolicy(self.latency),
             nodes=self.nodes,
-            network_stats_collector=NetworkStatsCollector(self.network_stats_file)
+            network_stats_collector=NetworkStatsCollector(
+                output_file=open(file=self.network_stats_file_name, mode='wb')
+            )
         )
         self.nodes_hub.sync_start_proxies()
         self.nodes_hub.sync_connect_nodes_graph(self.graph_edges)
@@ -169,13 +169,6 @@ class ForkingSimulation:
             successful_run = self.run()
         finally:
             self.logger.info('Releasing resources')
-
-            if (
-                self.network_stats_file is not None and
-                not self.network_stats_file.closed
-            ):
-                self.network_stats_file.close()
-
             if self.nodes_hub is not None:
                 self.nodes_hub.close()
             self.stop_nodes()
@@ -193,6 +186,9 @@ class ForkingSimulation:
         await asyncio_sleep(4 * self.sample_time)
 
     def setup_directories(self):
+        if self.tmp_dir != '':
+            return
+
         self.logger.info('Preparing temporary directories')
         self.tmp_dir = mkdtemp(prefix='simulation')
         self.logger.info(f'Nodes logs are in {self.tmp_dir}')
@@ -209,15 +205,29 @@ class ForkingSimulation:
             initialize_datadir(self.tmp_dir, i)
 
     def setup_nodes(self):
+        if len(self.nodes) > 0:
+            print('Skipping nodes setup')
+            return
+
         self.logger.info('Creating node wrappers')
 
+        all_node_ids = set(range(self.num_nodes))
         self.proposer_node_ids = sample(
-            range(self.num_nodes), self.num_proposer_nodes
+            all_node_ids, self.num_proposer_nodes
+        )
+        self.validator_node_ids = sample(
+            all_node_ids.difference(self.proposer_node_ids),
+            self.num_validator_nodes
         )
 
         node_args = [
+            '-testnet=0',
+            '-regtest=1',
             '-connect=0',
             '-listen=1',
+            '-whitelist=127.0.0.1',
+            '-stakesplitthreshold=10000000000000',
+            '-stakecombinemaximum=11000000000000',
             f'''-customchainparams={json_dumps({
                 "block_time_seconds": self.block_time_seconds,
                 "block_stake_timestamp_interval_seconds": self.block_stake_timestamp_interval_seconds
@@ -225,18 +235,24 @@ class ForkingSimulation:
         ]
         relay_args = node_args + ['-proposing=0']
         proposer_args = node_args + ['-proposing=1']
+        validator_args = node_args + ['-proposing=0', '-validating=1']
 
         if not self.nodes_stats_directory.exists():
             self.nodes_stats_directory.mkdir()
+
+        def get_node_args(node_id: int) -> List[str]:
+            if node_id in self.proposer_node_ids:
+                return proposer_args
+            elif node_id in self.validator_node_ids:
+                return validator_args
+            else:
+                return relay_args
 
         self.nodes = [
             TestNode(
                 i=i,
                 dirname=self.tmp_dir,
-                extra_args=(
-                    proposer_args if i in self.proposer_node_ids
-                    else relay_args
-                ) + [f'''-stats-log-output-file={
+                extra_args=get_node_args(i) + [f'''-stats-log-output-file={
                     self.nodes_stats_directory.joinpath(f"stats_{i}.csv")
                 }'''],
                 rpchost=None,
@@ -263,7 +279,8 @@ class ForkingSimulation:
         self.logger.info('Starting nodes')
         for node_id, node in enumerate(self.nodes):
             try:
-                node.start()
+                if not node.running:
+                    node.start()
             except OSError as e:
                 self.logger.critical(f'Node {node_id} failed to start', e)
                 raise
