@@ -138,11 +138,8 @@ class SimpleNode:
                 continue
 
             # We try to check if we can 'un-orphan' some block...
-            recovered_orphan = True
-            while recovered_orphan:
-                recovered_orphan = False
-                for orphan in self.orphan_blocks:
-                    recovered_orphan = self.process_block(orphan) or recovered_orphan
+            self.process_orphans()
+            self.find_best_tip()
 
             self.relay_message(
                 msg=block,
@@ -155,13 +152,19 @@ class SimpleNode:
 
         return num_relayed_messages
 
-    def process_block(self, block: Block) -> bool:
-        result = self.__process_block(block)
-        if result:
-            self.find_best_tip()
-        return result
+    def process_orphans(self):
+        try_to_save_orphans = True
+        while try_to_save_orphans:
+            try_to_save_orphans = False
+            recovered_orphans = set()
+            for orphan in self.orphan_blocks:
+                added = self.process_block(orphan)
+                if added:
+                    recovered_orphans.add(orphan)
+                try_to_save_orphans = added or try_to_save_orphans
+            self.orphan_blocks.difference_update(recovered_orphans)
 
-    def __process_block(self, block: Block) -> bool:
+    def process_block(self, block: Block) -> bool:
         """
         Tries to add the block to the main blockchain, or at least to one of the
         alternative chains that the node keeps in memory.
@@ -180,13 +183,18 @@ class SimpleNode:
         all_chains = [self.main_chain] + self.alternative_chains
 
         for chain in all_chains:
-            if block.prev_block_hash == chain.blocks[-1].block_hash():
+            c_blocks = chain.blocks
+
+            if block.prev_block_hash == c_blocks[-1].block_hash():
                 chain.add_block(block)
                 return True
-            if block.block_hash() in [b.block_hash() for b in chain.blocks]:
+            if block.block_hash() in [b.block_hash() for b in c_blocks]:
                 return False  # We already know the block
 
-            if chain.blocks[block.coinstake_tx.height].prev_block_hash == block.prev_block_hash:
+            if (
+                len(c_blocks) > block.coinstake_tx.height and
+                c_blocks[block.coinstake_tx.height].prev_block_hash == block.prev_block_hash
+            ):
                 # Our block shares parent with an existent block
                 new_chain = chain.get_truncated_copy(block.coinstake_tx.height - 1)
                 new_chain.add_block(block)
