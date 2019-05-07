@@ -17,7 +17,8 @@ https://opensource.org/licenses/MIT.
     * You can configure `pipenv` to create per-project virtual environments in
       the working directory instead of putting them in a shared directory by
       setting the environment variable `PIPENV_VENV_IN_PROJECT=1`.
-  * A copy of the `unit-e` repository must be locally accessible.
+  * A copy of the `unit-e` repository must be locally accessible (and the
+    `unit-e` must be built)
 
 ## Setup / Configuration
 
