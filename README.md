@@ -140,3 +140,14 @@ systems like Ubuntu, `pip3` should be used instead of `pip` to install `pipenv`.
 
 There are some tools that could help to install & manage Python utilities, like
 [`pipx`](https://github.com/pipxproject/pipx).
+
+
+### `TypeError: __init__() got an unexpected keyword argument 'dirname'`
+
+**Notice:** This is a temporary workaround.
+
+The current `ForkingSimulation` is compatible with Unit-e v0.1, but not with
+the current Unit-e's master branch due to interface changes in the `TestNode`
+class.
+
+Be sure to checkout the tag `v0.1.0` to build the Unit-e binaries.
