@@ -20,9 +20,9 @@ https://opensource.org/licenses/MIT.
 
 ## Setup / Configuration
 
-1. Copy the `.env.example` file to the `.env` file and ensure that the paths are
-   correct (it will depend on your local environment, that's why `.env` is not
-   versioned).
+1. Copy the `.env.example` file to the `.env` file and ensure that the specified
+   paths are correct and reachable (it will depend on your local environment,
+   that's why `.env` is not versioned).
 
 2. In order to develop the simulations, you will need to install the dev
    packages with the `pipenv` tool by executing `pipenv install --dev`.
