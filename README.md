@@ -14,6 +14,9 @@ https://opensource.org/licenses/MIT.
 
   * Python 3.6
   * Pipenv ( https://pipenv.readthedocs.io/en/latest/ )
+    * You can configure `pipenv` to create per-project virtual environments in
+      the working directory instead of putting them in a shared directory by
+      setting the environment variable `PIPENV_VENV_IN_PROJECT=1`.
 
 ## Setup / Configuration
 
@@ -127,3 +130,11 @@ It turns out that Jupyter starts Python kernels at the path where the `*.ipynb`
 files are located. So, if you are using relative paths in your `.env` file, this
 is the most probable cause. It can be fixed just by using absolute paths
 instead.
+
+### Unable to install dependencies with pipenv
+
+Could be that `pipenv` was installed using Python 2 instead of Python 3. In
+systems like Ubuntu, `pip3` should be used instead of `pip` to install `pipenv`.
+
+There are some tools that could help to install & manage Python utilities, like
+[`pipx`](https://github.com/pipxproject/pipx).
