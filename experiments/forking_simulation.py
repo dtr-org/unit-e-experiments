@@ -163,7 +163,7 @@ class ForkingSimulation:
         self.loop.run_until_complete(self.trigger_simulation_stop())
         return True
 
-    def safe_run(self, close_loop=True):
+    def safe_run(self, close_loop=True) -> bool:
         successful_run = False
         try:
             successful_run = self.run()
@@ -185,6 +185,7 @@ class ForkingSimulation:
 
             if close_loop:
                 self.loop.close()
+        return successful_run
 
     async def trigger_simulation_stop(self):
         await asyncio_sleep(self.simulation_time)
@@ -350,7 +351,9 @@ def main():
         network_stats_file_name=cmd_args['network_stats_file'],
         nodes_stats_directory=cmd_args['node_stats_directory']
     )
-    simulation.safe_run()
+
+    if not simulation.safe_run():
+        exit(1)
 
 
 if __name__ == '__main__':
