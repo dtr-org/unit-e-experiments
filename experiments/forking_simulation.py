@@ -30,7 +30,6 @@ from asyncio import (
     sleep as asyncio_sleep,
     get_event_loop,
 )
-from io import BytesIO
 from json import dumps as json_dumps
 from logging import (
     INFO,
@@ -49,6 +48,7 @@ from random import sample
 from shutil import rmtree
 from tempfile import mkdtemp
 from typing import (
+    BinaryIO,
     List,
     Optional,
     Set,
@@ -118,7 +118,7 @@ class ForkingSimulation:
         # Filesystem related settings
         self.cache_dir = normpath(dirname(realpath(__file__)) + '/cache')
         self.tmp_dir = ''
-        self.network_stats_file: Optional[BytesIO] = None
+        self.network_stats_file: Optional[BinaryIO] = None
         self.network_stats_file_name = network_stats_file_name
         self.nodes_stats_directory = Path(nodes_stats_directory).resolve()
 
