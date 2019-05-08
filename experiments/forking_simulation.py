@@ -130,7 +130,7 @@ class ForkingSimulation:
 
         self.is_running = False
 
-    def run(self):
+    def run(self) -> bool:
         self.logger.info('Starting simulation')
 
         self.setup_directories()
@@ -140,7 +140,7 @@ class ForkingSimulation:
         try:
             self.start_nodes()
         except (OSError, AssertionError):
-            return  # Early shutdown
+            return False  # Early shutdown
 
         # Opening network stats files
         self.network_stats_file = open(file=self.network_stats_file_name, mode='wb')
@@ -161,10 +161,12 @@ class ForkingSimulation:
             )
 
         self.loop.run_until_complete(self.trigger_simulation_stop())
+        return True
 
     def safe_run(self, close_loop=True):
+        successful_run = False
         try:
-            self.run()
+            successful_run = self.run()
         finally:
             self.logger.info('Releasing resources')
 
@@ -177,7 +179,9 @@ class ForkingSimulation:
             if self.nodes_hub is not None:
                 self.nodes_hub.close()
             self.stop_nodes()
-            self.cleanup_directories()
+
+            if successful_run:
+                self.cleanup_directories()
 
             if close_loop:
                 self.loop.close()
@@ -259,15 +263,16 @@ class ForkingSimulation:
         for node_id, node in enumerate(self.nodes):
             try:
                 node.start()
-            except OSError:
-                self.logger.critical(f'Node {node_id} failed to start')
+            except OSError as e:
+                self.logger.critical(f'Node {node_id} failed to start', e)
                 raise
         for node_id, node in enumerate(self.nodes):
             try:
                 node.wait_for_rpc_connection()
-            except AssertionError:
+            except AssertionError as e:
                 self.logger.critical(
-                    f'Impossible to establish RPC connection to node {node_id}'
+                    f'Impossible to establish RPC connection to node {node_id}',
+                    e
                 )
                 raise
 
