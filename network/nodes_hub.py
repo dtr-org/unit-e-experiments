@@ -7,9 +7,10 @@
 
 from asyncio import (
     AbstractEventLoop,
-    Protocol,
     AbstractServer,
+    Protocol,
     Transport,
+    WriteTransport,
     gather,
     sleep as asyncio_sleep
 )
@@ -31,7 +32,10 @@ from network.utils import get_pid_for_network_client
 from network.stats import NetworkStatsCollector
 from test_framework.messages import hash256
 from test_framework.test_node import TestNode
-from test_framework.util import p2p_port
+from test_framework.util import (
+    p2p_port,
+    rpc_port
+)
 
 NUM_OUTBOUND_CONNECTIONS = 8
 NUM_INBOUND_CONNECTIONS = 125
@@ -102,8 +106,8 @@ class NodesHub:
         It starts the nodes's proxies.
         """
         for node_id in range(len(self.nodes)):
-            self.ports2nodes_map[self.get_node_port(node_id)] = node_id
-            self.ports2nodes_map[self.get_proxy_port(node_id)] = node_id
+            self.ports2nodes_map[self.get_p2p_node_port(node_id)] = node_id
+            self.ports2nodes_map[self.get_p2p_proxy_port(node_id)] = node_id
 
         self.proxy_servers = await gather(*[
             self.loop.create_server(
@@ -111,7 +115,7 @@ class NodesHub:
                     hub_ref=self, node_id=node_id
                 ),
                 host=self.host,
-                port=self.get_proxy_port(node_id)
+                port=self.get_p2p_proxy_port(node_id)
             )
             for node_id, node in enumerate(self.nodes)
         ])
@@ -171,14 +175,18 @@ class NodesHub:
         self.state = 'closed'
 
     @staticmethod
-    def get_node_port(node_idx):
+    def get_rpc_node_port(node_idx):
+        return rpc_port(node_idx)
+
+    @staticmethod
+    def get_p2p_node_port(node_idx):
         return p2p_port(node_idx)
 
-    def get_proxy_port(self, node_idx):
+    def get_p2p_proxy_port(self, node_idx):
         return p2p_port(len(self.nodes) + 1 + node_idx)
 
     def get_proxy_address(self, node_idx):
-        return f'{self.host}:{self.get_proxy_port(node_idx)}'
+        return f'{self.host}:{self.get_p2p_proxy_port(node_idx)}'
 
     async def connect_nodes(self, outbound_idx: int, inbound_idx: int):
         """
@@ -247,7 +255,7 @@ class NodesHub:
     def process_buffer(
             self,
             buffer: bytes,
-            transport: Transport,
+            transport: WriteTransport,
             connection: Union['ProxyInputConnection', 'ProxyOutputConnection']
     ) -> bytes:
         """
@@ -280,7 +288,7 @@ class NodesHub:
                     '!H', msg[VERSION_PORT_OFFSET:VERSION_PORT_OFFSET + 2]
                 )[0]
                 if node_port != 0:
-                    proxy_port = self.get_proxy_port(
+                    proxy_port = self.get_p2p_proxy_port(
                         self.ports2nodes_map[node_port]
                     )
                     msg = (
@@ -367,7 +375,7 @@ class ProxyInputConnection(Protocol):
             transport_socket: socket_cls = transport._sock
             peer_port = transport_socket.getpeername()[1]
             server_port = transport_socket.getsockname()[1]
-            assert server_port == self.hub_ref.get_proxy_port(self.receiver_id)
+            assert server_port == self.hub_ref.get_p2p_proxy_port(self.receiver_id)
 
             peer_pid = get_pid_for_network_client(
                 client_port=peer_port,
@@ -398,7 +406,7 @@ class ProxyInputConnection(Protocol):
                 input_connection=self
             ),
             host=self.hub_ref.host,
-            port=self.hub_ref.get_node_port(self.receiver_id)
+            port=self.hub_ref.get_p2p_node_port(self.receiver_id)
         ))
 
         logger.debug(f'''ProxyInputConnection {self.id}: connection_made {(

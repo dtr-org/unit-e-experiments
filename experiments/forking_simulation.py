@@ -37,11 +37,15 @@ from logging import (
     basicConfig as loggingBasicConfig,
     getLogger
 )
+from os import (
+    environ,
+    mkdir
+)
 from os.path import (
     dirname,
+    exists as path_exists,
     normpath,
     realpath,
-    exists as path_exists
 )
 from pathlib import Path
 from random import sample
@@ -191,6 +195,9 @@ class ForkingSimulation:
 
         self.logger.info('Preparing temporary directories')
         self.tmp_dir = mkdtemp(prefix='simulation')
+        mkdir(self.tmp_dir + '/regtest')
+        mkdir(self.tmp_dir + '/stdout')
+        mkdir(self.tmp_dir + '/stderr')
         self.logger.info(f'Nodes logs are in {self.tmp_dir}')
 
     def cleanup_directories(self):
@@ -221,44 +228,60 @@ class ForkingSimulation:
         )
 
         node_args = [
-            '-testnet=0',
             '-regtest=1',
+
             '-connect=0',
             '-listen=1',
+            '-listenonion=0',
+            '-server',
+
             '-whitelist=127.0.0.1',
+
+            '-debug',
+            '-logtimemicros',
+            '-debugexclude=libevent',
+            '-debugexclude=leveldb',
+            '-mocktime=0',
+
             '-stakesplitthreshold=10000000000000',
             '-stakecombinemaximum=11000000000000',
             f'''-customchainparams={json_dumps({
                 "block_time_seconds": self.block_time_seconds,
                 "block_stake_timestamp_interval_seconds": self.block_stake_timestamp_interval_seconds
-            })}'''
+            }, separators=(",",":"))}'''
         ]
-        relay_args = node_args + ['-proposing=0']
-        proposer_args = node_args + ['-proposing=1']
-        validator_args = node_args + ['-proposing=0', '-validating=1']
+        relay_args = ['-proposing=0'] + node_args
+        proposer_args = ['-proposing=1'] + node_args
+        validator_args = ['-proposing=0', '-validating=1'] + node_args
 
         if not self.nodes_stats_directory.exists():
             self.nodes_stats_directory.mkdir()
 
         def get_node_args(node_id: int) -> List[str]:
             if node_id in self.proposer_node_ids:
-                return proposer_args
+                _node_args = proposer_args
             elif node_id in self.validator_node_ids:
-                return validator_args
+                _node_args = validator_args
             else:
-                return relay_args
+                _node_args = relay_args
+            return [
+                f'-bind=127.0.0.1:{NodesHub.get_p2p_node_port(node_id)}',
+                f'-rpcbind=127.0.0.1:{NodesHub.get_rpc_node_port(node_id)}',
+                f'''-stats-log-output-file={
+                    self.nodes_stats_directory.joinpath(f"stats_{node_id}.csv")
+                }''',
+                f'-uacomment=simpatch{node_id}'
+            ] + _node_args
 
         self.nodes = [
             TestNode(
                 i=i,
-                dirname=self.tmp_dir,
-                extra_args=get_node_args(i) + [f'''-stats-log-output-file={
-                    self.nodes_stats_directory.joinpath(f"stats_{i}.csv")
-                }'''],
+                datadir=f'{self.tmp_dir}/node{i}',
+                extra_args=get_node_args(i),
                 rpchost=None,
-                timewait=None,
-                binary=None,
-                stderr=None,
+                timewait=60,
+                unit_e=environ['UNIT_E'],
+                unit_e_cli=environ['UNIT_E_CLI'],
                 mocktime=0,
                 coverage_dir=None,
                 use_cli=False
@@ -358,8 +381,9 @@ def main():
     simulation = ForkingSimulation(
         loop=get_event_loop(),
         latency=0,
-        num_proposer_nodes=5,
-        num_relay_nodes=45,
+        num_proposer_nodes=45,
+        num_validator_nodes=5,
+        num_relay_nodes=0,
         simulation_time=120,
         sample_time=1,
         graph_model='preferential_attachment',
