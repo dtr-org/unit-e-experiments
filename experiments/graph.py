@@ -23,7 +23,7 @@ from typing import (
 
 
 def create_directed_graph(
-        num_nodes: int = 11,
+        num_nodes: int,
         num_outbound_connections: int = 8,
         max_inbound_connections: int = 125,
         graph_seed_size: Optional[int] = None,
@@ -79,7 +79,7 @@ def create_directed_graph(
 
 
 def create_static_graph(
-        num_nodes: int = 11,
+        num_nodes: int,
         num_outbound_connections: int = 8,
         max_ingoing_connections: int = 125,
 ) -> Tuple[Set[Tuple[int, int]], Dict[int, int]]:
@@ -92,7 +92,7 @@ def create_static_graph(
     inbound_degrees: DefaultDict[int, int] = defaultdict(int)
 
     for src_id in range(num_nodes):
-        for _ in range(num_outbound_connections):
+        for _ in range(min(num_outbound_connections, num_nodes - 1)):
             dst_id = randint(0, num_nodes - 1)
             while (
                     dst_id == src_id or
@@ -108,7 +108,7 @@ def create_static_graph(
 
 
 def create_growing_graph(
-        num_nodes: int = 11,
+        num_nodes: int,
         num_outbound_connections: int = 8,
         max_inbound_connections: int = 125,
         graph_seed_size: Optional[int] = None,
@@ -144,7 +144,7 @@ def create_growing_graph(
 
 
 def create_preferential_attachment_graph(
-        num_nodes: int = 11,
+        num_nodes: int,
         num_outbound_connections: int = 8,
         max_inbound_connections: int = 125,
         graph_seed_size: Optional[int] = None,
@@ -188,6 +188,29 @@ def create_preferential_attachment_graph(
         graph_size += 1
 
     return directed_edges, inbound_degrees
+
+
+def create_simple_dense_graph(
+    node_ids: List[int],
+    num_outbound_connections: int = 8
+) -> Set[Tuple[int, int]]:
+    """
+    This function takes specific node/vertex ids and creates a densely connected
+    directed graph, when len(node_ids) <= num_outbound_connections, the graph
+    will be a clique.
+    """
+    directed_edges = set()
+
+    for idx, node_id in enumerate(node_ids):
+        num_cons = 0
+        peers = node_ids[idx + 1:] + node_ids[:idx]
+        for peer_id in peers:
+            if num_cons >= min(num_outbound_connections, len(node_ids) - 1):
+                break
+            directed_edges.add((node_id, peer_id))
+            num_cons += 1
+
+    return directed_edges
 
 
 def enforce_nodes_reconnections(

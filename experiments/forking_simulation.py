@@ -37,10 +37,7 @@ from logging import (
     basicConfig as loggingBasicConfig,
     getLogger
 )
-from os import (
-    environ,
-    mkdir
-)
+from os import environ
 from os.path import (
     dirname,
     exists as path_exists,
@@ -64,9 +61,13 @@ from experiments.graph import (
     enforce_nodes_reconnections,
     ensure_one_inbound_connection_per_node,
     create_directed_graph,
+    create_simple_dense_graph
 )
 from network.latencies import StaticLatencyPolicy
-from network.stats import NetworkStatsCollector
+from network.stats import (
+    CsvNetworkStatsCollector,
+    NullNetworkStatsCollector
+)
 from network.nodes_hub import (
     NodesHub,
     NUM_INBOUND_CONNECTIONS,
@@ -143,6 +144,7 @@ class ForkingSimulation:
         self.setup_nodes()
 
         try:
+            self.autofinalization_workaround()
             self.start_nodes()
         except (OSError, AssertionError):
             return False  # Early shutdown
@@ -151,7 +153,7 @@ class ForkingSimulation:
             loop=self.loop,
             latency_policy=StaticLatencyPolicy(self.latency),
             nodes=self.nodes,
-            network_stats_collector=NetworkStatsCollector(
+            network_stats_collector=CsvNetworkStatsCollector(
                 output_file=open(file=self.network_stats_file_name, mode='wb')
             )
         )
@@ -159,13 +161,88 @@ class ForkingSimulation:
         self.nodes_hub.sync_connect_nodes_graph(self.graph_edges)
 
         # Loading wallets... only for proposers (which are picked randomly)
-        for idx, proposer_id in enumerate(self.proposer_node_ids):
+        # Notice that the "first" proposer already loaded its wallet during the
+        # autofinalization workaround call, same for the validators.
+        for idx, proposer_id in enumerate(self.proposer_node_ids[1:]):
             self.nodes[proposer_id].importmasterkey(
                 regtest_mnemonics[idx]['mnemonics']
             )
 
         self.loop.run_until_complete(self.trigger_simulation_stop())
         return True
+
+    def autofinalization_workaround(self):
+        """
+        Because of auto-finalization, we have to start with a single proposer
+        and propose some blocks before we can add the rest of the nodes.
+        """
+        self.logger.info('Running auto-finalization workaround')
+
+        lucky_proposer_id = self.proposer_node_ids[0]
+        validators = [self.nodes[i] for i in self.validator_node_ids]
+
+        self.start_node(lucky_proposer_id)
+        self.start_nodes(validators)
+
+        # Although we don't need to collect data during this initialization
+        # phase, we'll connect the nodes through a NodesHub instance to ensure
+        # that they don't discover the real ports of each other and always
+        # connect through the proxies during the simulation.
+        tmp_hub = NodesHub(
+            loop=self.loop,
+            latency_policy=StaticLatencyPolicy(0),
+            nodes=self.nodes,
+            network_stats_collector=NullNetworkStatsCollector()
+        )
+        lucky_node_ids = [lucky_proposer_id] + self.validator_node_ids
+        tmp_hub.sync_start_proxies(lucky_node_ids)
+        dense_graph = create_simple_dense_graph(node_ids=lucky_node_ids)
+        tmp_hub.sync_connect_nodes_graph(dense_graph)
+
+        # We have to load some money into the nodes
+        self.nodes[lucky_proposer_id].importmasterkey(
+            regtest_mnemonics[0]['mnemonics']
+        )
+        for idx, validator_id in enumerate(self.validator_node_ids):
+            self.nodes[validator_id].importmasterkey(
+                regtest_mnemonics[self.num_proposer_nodes + idx]['mnemonics']
+            )
+
+        self.loop.run_until_complete(self.ensure_autofinalization_is_off(
+            validators
+        ))
+        tmp_hub.close()  # We close all temporary connections
+
+        # We recover the original topology for the full network
+        # self.num_nodes, self.graph_edges = tmp_num_nodes, tmp_graph_edges
+        self.logger.info('Finished auto-finalization workaround')
+
+    async def ensure_autofinalization_is_off(self, validators: List[TestNode]):
+        for validator in validators:
+            # TODO: Obtain the available amount dynamically by RPC calls
+            validator.deposit(
+                validator.getnewaddress('', 'legacy'),
+                validator.getbalance() - 1
+            )
+
+            # Because the network is blocking due to NodesHub, we have to yield
+            # control here, so the deposit transactions can be properly relayed.
+            await asyncio_sleep(0)
+
+        # We have to wait at least for one epoch :( .
+        await asyncio_sleep(1 + self.block_time_seconds * 50)
+
+        lucky_proposer = self.nodes[self.proposer_node_ids[0]]
+        is_autofinalization_off = False
+
+        while not is_autofinalization_off:
+            finalization_state = lucky_proposer.getfinalizationstate()
+            is_autofinalization_off = (
+                finalization_state is not None and
+                'validators' in finalization_state and
+                1 == finalization_state['validators']
+            )
+            await asyncio_sleep(1)
 
     def safe_run(self, close_loop=True) -> bool:
         successful_run = False
@@ -195,9 +272,6 @@ class ForkingSimulation:
 
         self.logger.info('Preparing temporary directories')
         self.tmp_dir = mkdtemp(prefix='simulation')
-        mkdir(self.tmp_dir + '/regtest')
-        mkdir(self.tmp_dir + '/stdout')
-        mkdir(self.tmp_dir + '/stderr')
         self.logger.info(f'Nodes logs are in {self.tmp_dir}')
 
     def cleanup_directories(self):
@@ -227,6 +301,9 @@ class ForkingSimulation:
             self.num_validator_nodes
         )
 
+        # Some values are copied from test_framework.util.initialize_datadir, so
+        # they are redundant, but it's easier to see what's going on by having
+        # all of them together.
         node_args = [
             '-regtest=1',
 
@@ -298,16 +375,20 @@ class ForkingSimulation:
             self.stop_nodes()
             raise
 
-    def start_nodes(self):
+    def start_nodes(self, nodes: Optional[List[TestNode]] = None):
         self.logger.info('Starting nodes')
-        for node_id, node in enumerate(self.nodes):
+
+        if nodes is None:
+            nodes = self.nodes
+
+        for node_id, node in enumerate(nodes):
             try:
                 if not node.running:
                     node.start()
             except OSError as e:
                 self.logger.critical(f'Node {node_id} failed to start', e)
                 raise
-        for node_id, node in enumerate(self.nodes):
+        for node_id, node in enumerate(nodes):
             try:
                 node.wait_for_rpc_connection()
             except AssertionError as e:

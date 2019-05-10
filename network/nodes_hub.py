@@ -78,6 +78,8 @@ class NodesHub:
         self.nodes = nodes
         self.pid2node_id: Dict[int, int] = {
             node.process.pid: node_id for node_id, node in enumerate(self.nodes)
+            # Could be that some nodes are not started
+            if node.process is not None
         }
 
         self.host = host
@@ -93,11 +95,11 @@ class NodesHub:
 
         self.network_stats_collector = network_stats_collector
 
-    def sync_start_proxies(self):
+    def sync_start_proxies(self, node_ids: Optional[List[int]] = None):
         """Sync wrapper around start_proxies"""
-        self.loop.run_until_complete(self.start_proxies())
+        self.loop.run_until_complete(self.start_proxies(node_ids))
 
-    async def start_proxies(self):
+    async def start_proxies(self, node_ids: Optional[List[int]] = None):
         """
         This method creates (& starts) a listener proxy for each node, the
         connections from each proxy to the real node that they represent will be
@@ -105,7 +107,11 @@ class NodesHub:
 
         It starts the nodes's proxies.
         """
-        for node_id in range(len(self.nodes)):
+
+        if node_ids is None:
+            node_ids = list(range(len(self.nodes)))
+
+        for node_id in node_ids:
             self.ports2nodes_map[self.get_p2p_node_port(node_id)] = node_id
             self.ports2nodes_map[self.get_p2p_proxy_port(node_id)] = node_id
 
@@ -117,7 +123,7 @@ class NodesHub:
                 host=self.host,
                 port=self.get_p2p_proxy_port(node_id)
             )
-            for node_id, node in enumerate(self.nodes)
+            for node_id in node_ids
         ])
 
         self.state = 'started_proxies'
@@ -153,9 +159,16 @@ class NodesHub:
         Allows to setup a network given an arbitrary graph (in the form of edges
         set).
         """
+        num_proxies = len(
+            {i for i, _ in graph_edges}.union({j for _, j in graph_edges})
+        )
+
         await gather(*(
-            [self.connect_nodes(i, j) for (i, j) in graph_edges] +
-            [self.wait_for_pending_connections()]
+            [
+                self.connect_nodes(i, j, num_expected_proxies=num_proxies)
+                for (i, j) in graph_edges
+            ] +
+            [self.wait_for_pending_connections(len(graph_edges))]
         ))
 
     def close(self):
@@ -164,6 +177,9 @@ class NodesHub:
         self.state = 'closing'
         logger.info('Shutting down NodesHub instance')
 
+        for node in self.nodes:
+            node.disconnect_p2ps()
+
         self.network_stats_collector.close()
 
         for server in self.proxy_servers:
@@ -171,6 +187,7 @@ class NodesHub:
             if server.sockets is not None:
                 for socket in server.sockets:
                     socket.close()
+        self.proxy_servers = []  # Remove references
 
         self.state = 'closed'
 
@@ -188,14 +205,23 @@ class NodesHub:
     def get_proxy_address(self, node_idx):
         return f'{self.host}:{self.get_p2p_proxy_port(node_idx)}'
 
-    async def connect_nodes(self, outbound_idx: int, inbound_idx: int):
+    async def connect_nodes(
+        self,
+        outbound_idx: int,
+        inbound_idx: int,
+        num_expected_proxies: Optional[int] = None
+    ):
         """
         :param outbound_idx: Refers the "sender" (asking for a new connection)
         :param inbound_idx: Refers the "receiver" (listening for new connections)
+        :param num_expected_proxies: Only for corner-case usages
         """
 
+        if num_expected_proxies is None:
+            num_expected_proxies = len(self.nodes)
+
         # We have to wait until all the proxies are configured and listening
-        while len(self.proxy_servers) < len(self.nodes):
+        while len(self.proxy_servers) < num_expected_proxies:
             await asyncio_sleep(0)
 
         await self.connect_sender_to_proxy(outbound_idx, inbound_idx)
@@ -221,10 +247,16 @@ class NodesHub:
         # Connect to proxy. Will trigger ProxyInputConnection.connection_made
         sender_node.addnode(proxy_address, 'onetry')
 
-    async def wait_for_pending_connections(self):
+    async def wait_for_pending_connections(
+        self,
+        num_expected_connections: Optional[int] = None
+    ):
+        if num_expected_connections is None:
+            num_expected_connections = len(self.nodes) * NUM_OUTBOUND_CONNECTIONS
+
         # The first time we give some margin to the other coroutines so they can
         # start adding pending connections.
-        while self.num_connection_intents < len(self.nodes) * NUM_OUTBOUND_CONNECTIONS:
+        while self.num_connection_intents < num_expected_connections:
             await asyncio_sleep(0.005)
 
         # We wait until we know that all the connections have been created
