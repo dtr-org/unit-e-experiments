@@ -8,18 +8,29 @@
 import pytest
 
 from blockchain.block import Block
-from blockchain.blockchain import BlockChain, Clock
+from blockchain.blockchain import BlockChain, BiasedClock, CheatedClock
 from blockchain.transaction import CoinStakeTransaction
 
 
-def test_clock():
+def test_cheated_clock():
     with pytest.raises(expected_exception=AssertionError):
-        Clock(-1)
-    clock = Clock(16)
-    assert clock.time == 16
+        CheatedClock(-1)
+    clock = CheatedClock(16)
+    assert clock.get_time() == 16
 
     clock.advance_time()
-    assert clock.time == 17
+    assert clock.get_time() == 17
+
+
+def test_biased_clock():
+    base_clock = CheatedClock(60)
+
+    avg_time = 0.0
+    for _ in range(100):
+        biased_clock = BiasedClock(base_clock=base_clock)
+        avg_time += biased_clock.get_time()
+    avg_time /= 100
+    assert abs(60 - avg_time) < 1.0
 
 
 def test_blockchain_get_chain_work():
@@ -35,7 +46,7 @@ def test_blockchain_get_chain_work():
     # Creating a "strong" chain (all coins are staked)
     blockchain_a = BlockChain(
         genesis=genesis_block,
-        clock=Clock(257),
+        clock=CheatedClock(257),
         max_future_block_time_seconds=176,
         time_between_blocks=16,
         block_time_mask=1,
@@ -63,7 +74,7 @@ def test_blockchain_get_chain_work():
             )
 
             blockchain_a.clock.advance_time(1)
-            min_timestamp = blockchain_a.clock.time + blockchain_a.max_future_block_time_seconds - 1
+            min_timestamp = blockchain_a.clock.get_time() + blockchain_a.max_future_block_time_seconds - 1
 
         # Local variables for convenience
         block = candidates[0]
@@ -76,7 +87,7 @@ def test_blockchain_get_chain_work():
     # Creating a "weak" chain (just staking half of the coins)
     blockchain_b = BlockChain(
         genesis=genesis_block,
-        clock=Clock(257),
+        clock=CheatedClock(257),
         max_future_block_time_seconds=176,
         time_between_blocks=16,
         block_time_mask=1,
@@ -108,7 +119,7 @@ def test_blockchain_get_chain_work():
             )
 
             blockchain_b.clock.advance_time(1)
-            min_timestamp = blockchain_b.clock.time + blockchain_b.max_future_block_time_seconds - 1
+            min_timestamp = blockchain_b.clock.get_time() + blockchain_b.max_future_block_time_seconds - 1
 
         # Local variables for convenience
         block = candidates[0]

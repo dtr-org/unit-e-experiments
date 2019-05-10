@@ -9,9 +9,13 @@ from hashlib import sha256
 from struct import pack
 from typing import Any, List, Optional
 
-from blockchain import zeroes_uint256
+from blockchain import max_uint256_val, zeroes_uint256
 from blockchain.transaction import CoinStakeTransaction
-from blockchain.utils import compact_target_to_bigint
+from blockchain.utils import (
+    compact_target_to_bigint,
+    compact_target_to_uint256,
+    bigint_to_compact_target
+)
 
 
 class Block:
@@ -137,3 +141,20 @@ class Block:
             return self
         else:
             return None
+
+    def fit_target(self) -> 'Block':
+        """
+        Adjusts the difficulty as much as possible while keeping the kernel
+        hash smaller than the target.
+        This is a convenience method to tune genesis blocks, although not ideal,
+        it's slightly better than starting with target == b'\xff\xff\xff\xff'.
+        """
+        self.compact_target = bigint_to_compact_target(
+            min(
+                max_uint256_val,
+                int.from_bytes(self.kernel_hash(), 'big') +
+                (2 ** 24)  # From the compact target's "mantissa" size.
+            )
+        )
+        assert self.kernel_hash() < compact_target_to_uint256(self.compact_target)
+        return self

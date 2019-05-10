@@ -41,7 +41,8 @@ class CoinStakeTransaction:
         self, *,
         vin: List[Coin],
         vout: Optional[List[int]] = None,
-        height: int = 0
+        height: int = 0,
+        reward_amount: int = 1
     ):
         """
         Except for genesis, the first output is always the reward, the second is
@@ -54,9 +55,9 @@ class CoinStakeTransaction:
             # We combine stakes by default, if there's something to combine.
             combined_stake = sum(c.amount for c in vin)
             if combined_stake == 0:
-                self.vout = [1]
+                self.vout = [reward_amount]
             else:
-                self.vout = [1, combined_stake]
+                self.vout = [reward_amount, combined_stake]
         else:
             # We'll use this to create multiple coins at genesis
             self.vout = vout

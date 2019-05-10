@@ -7,7 +7,7 @@
 from unittest.mock import Mock
 
 from blockchain.block import Block
-from blockchain.blockchain import BlockChain, Clock
+from blockchain.blockchain import BlockChain, CheatedClock
 from blockchain.simple_node import SimpleNode
 from network.latencies import LatencyPolicy, StaticLatencyPolicy
 
@@ -20,7 +20,7 @@ def test_receive_message():
     node = SimpleNode(
         node_id=0,
         latency_policy=Mock(spec=LatencyPolicy),
-        chain=BlockChain(genesis=Block.genesis()),
+        chain=BlockChain(genesis=Block.genesis(), clock=CheatedClock(0)),
         initial_coins=set(),
         processing_time=0.5
     )
@@ -41,7 +41,7 @@ def test_receive_message():
 
 
 def test_process_messages():
-    clock = Clock(first_time=0)
+    clock = CheatedClock(time=0)
     latency_policy = StaticLatencyPolicy(base_delay=1.5)
     genesis = Block.genesis(
         timestamp=0,
@@ -199,3 +199,50 @@ def test_process_messages():
     assert len(node_a.orphan_blocks) == 0  # No orphans anymore
     assert len(node_a.alternative_chains) == 1  # Now we have a fork
     assert node_a.main_chain.height == 2  # And did also a re-org
+
+    # Now we want to check that the nodes b & c don't create new tips for the
+    # blocks that they already know (they receive the blocks again from node_a).
+
+    # We let pass some time to process all the already pending messages
+    clock.advance_time(2)
+    node_b.process_messages()
+    node_c.process_messages()
+    assert len(node_b.incoming_messages) == 0  # All messages are processed.
+    assert len(node_c.incoming_messages) == 0
+
+    # And now we send again blocks that the node already knows (main chain)
+    node_c.receive_message(
+        arrival_time=clock.get_time() + 0.1,
+        msg=node_c.main_chain.blocks[-1],
+        source_id=42
+    )
+    node_c.receive_message(
+        arrival_time=clock.get_time() + 0.2,
+        msg=node_c.main_chain.blocks[-2],
+        source_id=42
+    )
+    node_c.receive_message(
+        arrival_time=clock.get_time() + 0.3,
+        msg=node_c.main_chain.blocks[-3],
+        source_id=42
+    )
+
+    clock.advance_time(1)
+
+    assert node_c.process_messages() == 0  # The node does not relay them again.
+    assert len(node_c.incoming_messages) == 0
+    assert len(node_c.alternative_chains) == 1
+    assert node_c.main_chain.height == 2
+
+    # Regression test: And now we send again blocks that the node already knows
+    # (from an alternative chain).
+    node_c.receive_message(
+        arrival_time=clock.get_time() + 0.1,
+        msg=node_c.alternative_chains[0].blocks[-1],
+        source_id=42
+    )
+    clock.advance_time(1)
+
+    assert node_c.process_messages() == 0
+    assert len(node_c.incoming_messages) == 0
+    assert len(node_c.alternative_chains) == 1

@@ -5,8 +5,10 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 
+from abc import ABC, abstractmethod
 from copy import copy as shallow_copy
 from math import ceil
+from numpy.random import binomial  # type: ignore
 from statistics import median
 from typing import Optional
 
@@ -20,13 +22,35 @@ from blockchain.utils import (
 )
 
 
-class Clock:
-    def __init__(self, first_time: int):
-        assert first_time >= 0
-        self.time = first_time
+class Clock(ABC):
+    @abstractmethod
+    def get_time(self) -> int:
+        raise NotImplementedError
+
+
+class CheatedClock(Clock):
+    def __init__(self, time: int):
+        assert time >= 0
+        self.__time = time
 
     def advance_time(self, amount: int = 1):
-        self.time += amount
+        self.__time += amount
+
+    def get_time(self) -> int:
+        return self.__time
+
+
+class BiasedClock(Clock):
+    """
+    Like Clock, but with a random (although fixed) bias drawn from a shifted
+    binomial distribution. Useful to simulate lack of synchronicity.
+    """
+    def __init__(self, base_clock: Clock, max_bias=5, p=0.1):
+        self.base_clock = base_clock
+        self.bias = binomial(n=int(max_bias / p), p=p) - max_bias
+
+    def get_time(self) -> int:
+        return self.base_clock.get_time() + self.bias
 
 
 class BlockChain:
@@ -39,7 +63,7 @@ class BlockChain:
             genesis: Block,
 
             # World state
-            clock: Optional[Clock] = None,
+            clock: Clock,
 
             # Chain custom params
             stake_maturing_period: int = 0,
@@ -56,17 +80,14 @@ class BlockChain:
         assert 0 <= stake_blocking_period <= 150
         assert 1 <= num_blocks_for_median_timestamp <= 20
         assert 16 <= max_future_block_time_seconds <= 3600
-        assert 1 <= difficulty_adjustment_period <= 256
-        assert 6 <= difficulty_adjustment_window <= 256
+        assert 1 <= difficulty_adjustment_period <= 8192
+        assert 6 <= difficulty_adjustment_window <= 8192
         assert 4 <= time_between_blocks <= 120
         assert block_time_mask < time_between_blocks
         assert time_between_blocks % block_time_mask == 0
 
-        if clock is None:
-            clock = Clock(0)
-
         # The block comes from the past, not from the future
-        assert genesis.timestamp <= clock.time
+        assert genesis.timestamp <= clock.get_time()
         # The hash is consistent with the target
         assert genesis.kernel_hash() < compact_target_to_uint256(genesis.compact_target)
 
@@ -203,7 +224,7 @@ class BlockChain:
         else:
             # If we are not greedy, we just pass the current masked time
             min_timestamp = self.block_time_mask * (
-                self.clock.time // self.block_time_mask
+                self.clock.get_time() // self.block_time_mask
             )
             if min_timestamp <= self.median_past_timestamp():
                 return None  # This shouldn't happen, but who knows.
@@ -219,9 +240,9 @@ class BlockChain:
             compact_target=self.get_next_compact_target(),
             coinstake_tx=coinstake_tx,
             timestamp=min_timestamp,
-            real_timestamp=self.clock.time
+            real_timestamp=self.clock.get_time()
         ).try_to_be_valid(
-            max_timestamp=self.clock.time + self.max_future_block_time_seconds,
+            max_timestamp=self.clock.get_time() + self.max_future_block_time_seconds,
             time_mask=self.block_time_mask,
             greedy_proposal=greedy_proposal
         )
