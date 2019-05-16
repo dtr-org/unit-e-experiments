@@ -151,3 +151,35 @@ the current Unit-e's master branch due to interface changes in the `TestNode`
 class.
 
 Be sure to checkout the tag `v0.1.0` to build the Unit-e binaries.
+
+
+### Unable to open socket
+
+Sometimes, when the experiments spawn a considerable amount of nodes (and
+connections between them), we can suffer crashes due to the impossibility of
+opening new connections sockets.
+
+This can be solved by increasing our open files limits. If you type `ulimit -a`
+in the console, you'll see your current limits, the output will be similar to
+this:
+```
+core file size          (blocks, -c) 0
+data seg size           (kbytes, -d) unlimited
+scheduling priority             (-e) 0
+file size               (blocks, -f) unlimited
+pending signals                 (-i) 126908
+max locked memory       (kbytes, -l) 65536
+max memory size         (kbytes, -m) unlimited
+open files                      (-n) 1024
+pipe size            (512 bytes, -p) 8
+POSIX message queues     (bytes, -q) 819200
+real-time priority              (-r) 0
+stack size              (kbytes, -s) 8192
+cpu time               (seconds, -t) unlimited
+max user processes              (-u) 126908
+virtual memory          (kbytes, -v) unlimited
+file locks                      (-x) unlimited
+```
+
+The limit that is causing us problems is the one for "open files", so we can fix
+the problem by typing `ulimit -n 8192`.
