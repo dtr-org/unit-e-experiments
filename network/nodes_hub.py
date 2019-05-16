@@ -30,7 +30,6 @@ from typing import (
 from network.latencies import LatencyPolicy
 from network.utils import get_pid_for_network_client
 from network.stats import NetworkStatsCollector
-from test_framework.authproxy import JSONRPCException
 from test_framework.messages import hash256
 from test_framework.test_node import TestNode
 from test_framework.util import (
@@ -93,7 +92,7 @@ class NodesHub:
 
         self.num_connection_intents = 0
         self.num_unexpected_connections = 0
-        self.tried_connections = set()
+        self.tried_connections: Set[Tuple[int, int]] = set()
 
         self.network_stats_collector = network_stats_collector
 
