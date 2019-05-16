@@ -37,6 +37,7 @@ from logging import (
     basicConfig as loggingBasicConfig,
     getLogger
 )
+from math import floor
 from os import environ
 from os.path import (
     dirname,
@@ -48,6 +49,7 @@ from pathlib import Path
 from random import sample
 from shutil import rmtree
 from tempfile import mkdtemp
+from time import time as _time
 from typing import (
     List,
     Optional,
@@ -73,6 +75,7 @@ from network.nodes_hub import (
     NUM_INBOUND_CONNECTIONS,
     NUM_OUTBOUND_CONNECTIONS
 )
+from test_framework.messages import UNIT
 from test_framework.regtest_mnemonics import regtest_mnemonics
 from test_framework.test_node import TestNode
 from test_framework.util import initialize_datadir
@@ -138,13 +141,13 @@ class ForkingSimulation:
 
     def run(self) -> bool:
         self.logger.info('Starting simulation')
-
         self.setup_directories()
         self.setup_chain()
         self.setup_nodes()
 
         try:
-            self.autofinalization_workaround()
+            if self.num_validator_nodes > 0:
+                self.autofinalization_workaround()
             self.start_nodes()
         except (OSError, AssertionError):
             return False  # Early shutdown
@@ -160,10 +163,14 @@ class ForkingSimulation:
         self.nodes_hub.sync_start_proxies()
         self.nodes_hub.sync_connect_nodes_graph(self.graph_edges)
 
-        # Loading wallets... only for proposers (which are picked randomly)
-        # Notice that the "first" proposer already loaded its wallet during the
-        # autofinalization workaround call, same for the validators.
-        for idx, proposer_id in enumerate(self.proposer_node_ids[1:]):
+        if self.num_validator_nodes > 0:
+            # Notice that the "first" proposer already loaded its wallet during
+            # the auto-finalization workaround call, same for the validators.
+            proposer_ids = self.proposer_node_ids[1:]
+        else:
+            proposer_ids = self.proposer_node_ids
+
+        for idx, proposer_id in enumerate(proposer_ids):
             self.nodes[proposer_id].importmasterkey(
                 regtest_mnemonics[idx]['mnemonics']
             )
@@ -240,7 +247,7 @@ class ForkingSimulation:
             is_autofinalization_off = (
                 finalization_state is not None and
                 'validators' in finalization_state and
-                1 == finalization_state['validators']
+                finalization_state['validators'] >= 1
             )
             await asyncio_sleep(1)
 
@@ -287,7 +294,7 @@ class ForkingSimulation:
 
     def setup_nodes(self):
         if len(self.nodes) > 0:
-            print('Skipping nodes setup')
+            self.logger.info('Skipping nodes setup')
             return
 
         self.logger.info('Creating node wrappers')
@@ -320,11 +327,18 @@ class ForkingSimulation:
             '-debugexclude=leveldb',
             '-mocktime=0',
 
-            '-stakesplitthreshold=10000000000000',
-            '-stakecombinemaximum=11000000000000',
+            f'-stakesplitthreshold={100 * UNIT}',
+            f'-stakecombinemaximum={100 * UNIT}',
             f'''-customchainparams={json_dumps({
                 "block_time_seconds": self.block_time_seconds,
-                "block_stake_timestamp_interval_seconds": self.block_stake_timestamp_interval_seconds
+                "block_stake_timestamp_interval_seconds": self.block_stake_timestamp_interval_seconds,
+                "genesis_block": {
+                    "time": floor(_time()) - 1,
+                    "p2wpkh_funds": [
+                        {"amount": 10000 * UNIT, "pub_key_hash": mnemonic["address"]}
+                        for mnemonic in regtest_mnemonics
+                    ]
+                }
             }, separators=(",",":"))}'''
         ]
         relay_args = ['-proposing=0'] + node_args

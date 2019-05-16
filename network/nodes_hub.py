@@ -30,6 +30,7 @@ from typing import (
 from network.latencies import LatencyPolicy
 from network.utils import get_pid_for_network_client
 from network.stats import NetworkStatsCollector
+from test_framework.authproxy import JSONRPCException
 from test_framework.messages import hash256
 from test_framework.test_node import TestNode
 from test_framework.util import (
@@ -92,6 +93,7 @@ class NodesHub:
 
         self.num_connection_intents = 0
         self.num_unexpected_connections = 0
+        self.tried_connections = set()
 
         self.network_stats_collector = network_stats_collector
 
@@ -236,13 +238,22 @@ class NodesHub:
 
         sender_node = self.nodes[outbound_idx]
         proxy_address = self.get_proxy_address(inbound_idx)
+        retry = retry or (outbound_idx, inbound_idx) in self.tried_connections
 
         # self.pending_connections is used as a sort of semaphore
         if not retry:
             self.pending_connections.add((outbound_idx, inbound_idx))
             # Add the proxy to the outgoing connections list
-            sender_node.addnode(proxy_address, 'add')
-            self.num_connection_intents += 1
+            try:
+                sender_node.addnode(proxy_address, 'add')
+                self.num_connection_intents += 1
+            except BaseException as e:
+                if str(e) == 'Error: Node already added (-23)':
+                    pass
+                else:
+                    raise e
+            finally:
+                self.tried_connections.add((outbound_idx, inbound_idx))
 
         # Connect to proxy. Will trigger ProxyInputConnection.connection_made
         sender_node.addnode(proxy_address, 'onetry')
