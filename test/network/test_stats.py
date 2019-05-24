@@ -8,10 +8,13 @@
 from typing import BinaryIO
 from unittest.mock import Mock, patch
 
-from network.stats import CsvNetworkStatsCollector
+from network.stats import (
+    CsvNetworkStatsCollector,
+    NullNetworkStatsCollector
+)
 
 
-def test_network_stats_collector():
+def test_csv_network_stats_collector():
     mocked_file: Mock = Mock(spec=BinaryIO)
     network_stats_collector = CsvNetworkStatsCollector(output_file=mocked_file)
 
@@ -25,7 +28,21 @@ def test_network_stats_collector():
             src_node_id=13,
             dst_node_id=29
         )
+        network_stats_collector.close()
 
     mocked_file.write.assert_called_once_with(
         b'1549551476292,13,29,version,65\n'
     )
+
+
+def test_null_network_stats_collector():
+    # NullNetworkStatsCollector is just a stub, we test it only to keep sane
+    # coverage metrics.
+    network_stats_collector = NullNetworkStatsCollector()
+    network_stats_collector.register_event(
+        command_name='version',
+        command_size=65,
+        src_node_id=13,
+        dst_node_id=29
+    )
+    network_stats_collector.close()

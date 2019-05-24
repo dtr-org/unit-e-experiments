@@ -6,9 +6,11 @@
 
 
 from collections import defaultdict
+from itertools import product as cartesian_product
 
 from experiments.graph import (
     compute_degrees,
+    create_simple_dense_graph,
     create_static_graph,
     create_growing_graph,
     create_preferential_attachment_graph,
@@ -185,3 +187,22 @@ def test_create_preferential_attachment_graph():
 
     assert max(d.values()) >= 5
     assert d[16] == 0
+
+
+def test_create_simple_dense_graph():
+    all_node_ids = list(range(1, 33, 2))
+
+    for graph_size, outbound_degree in cartesian_product(
+        range(5, 17), range(2, 9)
+    ):
+        node_ids = all_node_ids[:graph_size]
+        graph = create_simple_dense_graph(
+            node_ids=node_ids,
+            num_outbound_connections=outbound_degree
+        )
+
+        for node_id in node_ids:
+            assert (node_id, node_id) not in graph
+            assert len({
+                (i, j) for i, j in graph if i == node_id
+            }) == min(len(node_ids) - 1, outbound_degree)
