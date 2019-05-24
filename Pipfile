@@ -4,16 +4,20 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [packages]
-psutil = "~=5.5"
+jupyter = "~=1.0"
+nest-asyncio = "~=1.0"
+matplotlib = "~=3.0"
 numpy = "~=1.16"
+pandas = "~=0.24"
+psutil = "~=5.5"
 
 [dev-packages]
 asynctest = "~=0.12"
 flake8 = "~=3.7.0"
 flake8-bugbear = "~=18.8"
 mccabe = "~=0.6"
-mypy-mypyc = "~=0.670"
-pytest = "~=4.1"
+mypy = "==0.701"
+pytest = "~=4.4"
 pytest-cov = "~=2.6"
 pytest-flake8 = "~=1.0"
 pytest-mypy = "~=0.3"

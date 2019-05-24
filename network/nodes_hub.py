@@ -7,9 +7,10 @@
 
 from asyncio import (
     AbstractEventLoop,
-    Protocol,
     AbstractServer,
+    Protocol,
     Transport,
+    WriteTransport,
     gather,
     sleep as asyncio_sleep
 )
@@ -31,7 +32,10 @@ from network.utils import get_pid_for_network_client
 from network.stats import NetworkStatsCollector
 from test_framework.messages import hash256
 from test_framework.test_node import TestNode
-from test_framework.util import p2p_port
+from test_framework.util import (
+    p2p_port,
+    rpc_port
+)
 
 NUM_OUTBOUND_CONNECTIONS = 8
 NUM_INBOUND_CONNECTIONS = 125
@@ -74,6 +78,8 @@ class NodesHub:
         self.nodes = nodes
         self.pid2node_id: Dict[int, int] = {
             node.process.pid: node_id for node_id, node in enumerate(self.nodes)
+            # Could be that some nodes are not started
+            if node.process is not None
         }
 
         self.host = host
@@ -86,14 +92,15 @@ class NodesHub:
 
         self.num_connection_intents = 0
         self.num_unexpected_connections = 0
+        self.tried_connections: Set[Tuple[int, int]] = set()
 
         self.network_stats_collector = network_stats_collector
 
-    def sync_start_proxies(self):
+    def sync_start_proxies(self, node_ids: Optional[List[int]] = None):
         """Sync wrapper around start_proxies"""
-        self.loop.run_until_complete(self.start_proxies())
+        self.loop.run_until_complete(self.start_proxies(node_ids))
 
-    async def start_proxies(self):
+    async def start_proxies(self, node_ids: Optional[List[int]] = None):
         """
         This method creates (& starts) a listener proxy for each node, the
         connections from each proxy to the real node that they represent will be
@@ -101,9 +108,13 @@ class NodesHub:
 
         It starts the nodes's proxies.
         """
-        for node_id in range(len(self.nodes)):
-            self.ports2nodes_map[self.get_node_port(node_id)] = node_id
-            self.ports2nodes_map[self.get_proxy_port(node_id)] = node_id
+
+        if node_ids is None:
+            node_ids = list(range(len(self.nodes)))
+
+        for node_id in node_ids:
+            self.ports2nodes_map[self.get_p2p_node_port(node_id)] = node_id
+            self.ports2nodes_map[self.get_p2p_proxy_port(node_id)] = node_id
 
         self.proxy_servers = await gather(*[
             self.loop.create_server(
@@ -111,9 +122,9 @@ class NodesHub:
                     hub_ref=self, node_id=node_id
                 ),
                 host=self.host,
-                port=self.get_proxy_port(node_id)
+                port=self.get_p2p_proxy_port(node_id)
             )
-            for node_id, node in enumerate(self.nodes)
+            for node_id in node_ids
         ])
 
         self.state = 'started_proxies'
@@ -149,9 +160,16 @@ class NodesHub:
         Allows to setup a network given an arbitrary graph (in the form of edges
         set).
         """
+        num_proxies = len(
+            {i for i, _ in graph_edges}.union({j for _, j in graph_edges})
+        )
+
         await gather(*(
-            [self.connect_nodes(i, j) for (i, j) in graph_edges] +
-            [self.wait_for_pending_connections()]
+            [
+                self.connect_nodes(i, j, num_expected_proxies=num_proxies)
+                for (i, j) in graph_edges
+            ] +
+            [self.wait_for_pending_connections(len(graph_edges))]
         ))
 
     def close(self):
@@ -160,32 +178,51 @@ class NodesHub:
         self.state = 'closing'
         logger.info('Shutting down NodesHub instance')
 
+        for node in self.nodes:
+            node.disconnect_p2ps()
+
+        self.network_stats_collector.close()
+
         for server in self.proxy_servers:
             server.close()
             if server.sockets is not None:
                 for socket in server.sockets:
                     socket.close()
+        self.proxy_servers = []  # Remove references
 
         self.state = 'closed'
 
     @staticmethod
-    def get_node_port(node_idx):
+    def get_rpc_node_port(node_idx):
+        return rpc_port(node_idx)
+
+    @staticmethod
+    def get_p2p_node_port(node_idx):
         return p2p_port(node_idx)
 
-    def get_proxy_port(self, node_idx):
+    def get_p2p_proxy_port(self, node_idx):
         return p2p_port(len(self.nodes) + 1 + node_idx)
 
     def get_proxy_address(self, node_idx):
-        return f'{self.host}:{self.get_proxy_port(node_idx)}'
+        return f'{self.host}:{self.get_p2p_proxy_port(node_idx)}'
 
-    async def connect_nodes(self, outbound_idx: int, inbound_idx: int):
+    async def connect_nodes(
+        self,
+        outbound_idx: int,
+        inbound_idx: int,
+        num_expected_proxies: Optional[int] = None
+    ):
         """
         :param outbound_idx: Refers the "sender" (asking for a new connection)
         :param inbound_idx: Refers the "receiver" (listening for new connections)
+        :param num_expected_proxies: Only for corner-case usages
         """
 
+        if num_expected_proxies is None:
+            num_expected_proxies = len(self.nodes)
+
         # We have to wait until all the proxies are configured and listening
-        while len(self.proxy_servers) < len(self.nodes):
+        while len(self.proxy_servers) < num_expected_proxies:
             await asyncio_sleep(0)
 
         await self.connect_sender_to_proxy(outbound_idx, inbound_idx)
@@ -200,21 +237,36 @@ class NodesHub:
 
         sender_node = self.nodes[outbound_idx]
         proxy_address = self.get_proxy_address(inbound_idx)
+        retry = retry or (outbound_idx, inbound_idx) in self.tried_connections
 
         # self.pending_connections is used as a sort of semaphore
         if not retry:
             self.pending_connections.add((outbound_idx, inbound_idx))
             # Add the proxy to the outgoing connections list
-            sender_node.addnode(proxy_address, 'add')
-            self.num_connection_intents += 1
+            try:
+                sender_node.addnode(proxy_address, 'add')
+                self.num_connection_intents += 1
+            except BaseException as e:
+                if str(e) == 'Error: Node already added (-23)':
+                    pass
+                else:
+                    raise e
+            finally:
+                self.tried_connections.add((outbound_idx, inbound_idx))
 
         # Connect to proxy. Will trigger ProxyInputConnection.connection_made
         sender_node.addnode(proxy_address, 'onetry')
 
-    async def wait_for_pending_connections(self):
+    async def wait_for_pending_connections(
+        self,
+        num_expected_connections: Optional[int] = None
+    ):
+        if num_expected_connections is None:
+            num_expected_connections = len(self.nodes) * NUM_OUTBOUND_CONNECTIONS
+
         # The first time we give some margin to the other coroutines so they can
         # start adding pending connections.
-        while self.num_connection_intents < len(self.nodes) * NUM_OUTBOUND_CONNECTIONS:
+        while self.num_connection_intents < num_expected_connections:
             await asyncio_sleep(0.005)
 
         # We wait until we know that all the connections have been created
@@ -245,9 +297,9 @@ class NodesHub:
     def process_buffer(
             self,
             buffer: bytes,
-            transport: Transport,
+            transport: WriteTransport,
             connection: Union['ProxyInputConnection', 'ProxyOutputConnection']
-    ):
+    ) -> bytes:
         """
         This function helps the hub to impersonate nodes by modifying 'version'
         messages changing the "from" addresses.
@@ -261,7 +313,7 @@ class NodesHub:
 
             # We wait until we have the full message
             if len(buffer) < MSG_HEADER_LENGTH + msglen:
-                return
+                return buffer
 
             command = buffer[4:4 + 12].split(b'\x00', 1)[0]
             logger.debug(
@@ -278,7 +330,7 @@ class NodesHub:
                     '!H', msg[VERSION_PORT_OFFSET:VERSION_PORT_OFFSET + 2]
                 )[0]
                 if node_port != 0:
-                    proxy_port = self.get_proxy_port(
+                    proxy_port = self.get_p2p_proxy_port(
                         self.ports2nodes_map[node_port]
                     )
                     msg = (
@@ -365,7 +417,7 @@ class ProxyInputConnection(Protocol):
             transport_socket: socket_cls = transport._sock
             peer_port = transport_socket.getpeername()[1]
             server_port = transport_socket.getsockname()[1]
-            assert server_port == self.hub_ref.get_proxy_port(self.receiver_id)
+            assert server_port == self.hub_ref.get_p2p_proxy_port(self.receiver_id)
 
             peer_pid = get_pid_for_network_client(
                 client_port=peer_port,
@@ -396,7 +448,7 @@ class ProxyInputConnection(Protocol):
                 input_connection=self
             ),
             host=self.hub_ref.host,
-            port=self.hub_ref.get_node_port(self.receiver_id)
+            port=self.hub_ref.get_p2p_node_port(self.receiver_id)
         ))
 
         logger.debug(f'''ProxyInputConnection {self.id}: connection_made {(

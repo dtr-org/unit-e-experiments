@@ -3,6 +3,7 @@ Pipfile.lock
 
 # Simulation related
 cache/
+experiments/notebooks/.ipynb_checkpoints/
 *.csv
 *.dat
 *.log

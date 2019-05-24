@@ -17,7 +17,6 @@ from blockchain.block import Block
 from blockchain.transaction import Coin, CoinStakeTransaction
 from blockchain.utils import (
     compact_target_to_bigint,
-    compact_target_to_uint256,
     uint256_to_compact_target
 )
 
@@ -79,7 +78,7 @@ class BlockChain:
         assert 0 <= stake_maturing_period <= 150
         assert 0 <= stake_blocking_period <= 150
         assert 1 <= num_blocks_for_median_timestamp <= 20
-        assert 16 <= max_future_block_time_seconds <= 3600
+        assert 1 <= max_future_block_time_seconds <= 7200
         assert 1 <= difficulty_adjustment_period <= 8192
         assert 6 <= difficulty_adjustment_window <= 8192
         assert 4 <= time_between_blocks <= 120
@@ -89,7 +88,7 @@ class BlockChain:
         # The block comes from the past, not from the future
         assert genesis.timestamp <= clock.get_time()
         # The hash is consistent with the target
-        assert genesis.kernel_hash() < compact_target_to_uint256(genesis.compact_target)
+        assert genesis.is_valid()
 
         # Consensus Settings
         ########################################################################
@@ -227,7 +226,11 @@ class BlockChain:
                 self.clock.get_time() // self.block_time_mask
             )
             if min_timestamp <= self.median_past_timestamp():
-                return None  # This shouldn't happen, but who knows.
+                # This shouldn't happen, but if there are greedy nodes in the
+                # network, then it will be common ...
+                min_timestamp = self.block_time_mask * int(ceil(
+                    (self.median_past_timestamp() + 1) / self.block_time_mask
+                ))
 
         # This relies on the fact that once we create a coinstake transaction,
         # we only put it into one block, so we do not have weird side effects.

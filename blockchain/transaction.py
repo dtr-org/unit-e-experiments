@@ -32,8 +32,8 @@ class Coin(NamedTuple):
     txo: TransactionOutput
 
     @staticmethod
-    def genesis() -> 'Coin':
-        return Coin(amount=0, height=0, txo=TransactionOutput.genesis())
+    def genesis(amount: int = 0) -> 'Coin':
+        return Coin(amount=amount, height=0, txo=TransactionOutput.genesis())
 
 
 class CoinStakeTransaction:
@@ -69,7 +69,11 @@ class CoinStakeTransaction:
 
     @staticmethod
     def genesis(vout: Optional[List[int]] = None) -> 'CoinStakeTransaction':
-        return CoinStakeTransaction(vin=[Coin.genesis()], vout=vout, height=0)
+        return CoinStakeTransaction(
+            vin=[Coin.genesis(amount=sum(vout or []))],
+            vout=vout,
+            height=0
+        )
 
     def tx_hash(self) -> bytes:
         if self._tx_hash is None:

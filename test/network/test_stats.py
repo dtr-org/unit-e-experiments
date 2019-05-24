@@ -8,12 +8,12 @@
 from typing import BinaryIO
 from unittest.mock import Mock, patch
 
-from network.stats import NetworkStatsCollector
+from network.stats import CsvNetworkStatsCollector
 
 
 def test_network_stats_collector():
     mocked_file: Mock = Mock(spec=BinaryIO)
-    network_stats_collector = NetworkStatsCollector(output_file=mocked_file)
+    network_stats_collector = CsvNetworkStatsCollector(output_file=mocked_file)
 
     with patch(
         target='network.stats.time_time',

@@ -45,8 +45,8 @@ def test_get_port_methods():
 
     used_ports = set()
     for node_id in range(20):
-        node_port = nodes_hub.get_node_port(node_id)
-        proxy_port = nodes_hub.get_proxy_port(node_id)
+        node_port = nodes_hub.get_p2p_node_port(node_id)
+        proxy_port = nodes_hub.get_p2p_proxy_port(node_id)
 
         # We assert port uniqueness
         assert(node_port not in used_ports)
@@ -221,7 +221,7 @@ async def test_start_proxies(event_loop: AbstractEventLoop):
     # The proxy instances are listening as expected
     for node_id in range(5):
         assert (test_pid == get_pid_for_network_server(
-            server_port=nodes_hub.get_proxy_port(node_id),
+            server_port=nodes_hub.get_p2p_proxy_port(node_id),
         ))
 
     nodes_hub.close()
