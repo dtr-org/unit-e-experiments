@@ -17,6 +17,7 @@ from asyncio import (
 from logging import getLogger
 from socket import socket as socket_cls
 from struct import pack, unpack
+from time import time as _time
 from typing import (
     Callable,
     Dict,
@@ -109,6 +110,8 @@ class NodesHub:
         It starts the nodes's proxies.
         """
 
+        logger.info('Starting node proxies')
+
         if node_ids is None:
             node_ids = list(range(len(self.nodes)))
 
@@ -128,6 +131,7 @@ class NodesHub:
         ])
 
         self.state = 'started_proxies'
+        logger.info('Started node proxies')
 
     def sync_biconnect_nodes_as_linked_list(self, nodes_list=None):
         """Sync wrapper around biconnect_nodes_as_linked_list"""
@@ -160,6 +164,7 @@ class NodesHub:
         Allows to setup a network given an arbitrary graph (in the form of edges
         set).
         """
+        logger.info('Asking the nodes to connect between them')
         num_proxies = len(
             {i for i, _ in graph_edges}.union({j for _, j in graph_edges})
         )
@@ -245,13 +250,13 @@ class NodesHub:
             # Add the proxy to the outgoing connections list
             try:
                 sender_node.addnode(proxy_address, 'add')
-                self.num_connection_intents += 1
             except BaseException as e:
                 if str(e) == 'Error: Node already added (-23)':
                     pass
                 else:
                     raise e
             finally:
+                self.num_connection_intents += 1
                 self.tried_connections.add((outbound_idx, inbound_idx))
 
         # Connect to proxy. Will trigger ProxyInputConnection.connection_made
@@ -270,7 +275,15 @@ class NodesHub:
             await asyncio_sleep(0.005)
 
         # We wait until we know that all the connections have been created
+        start_time = _time()
         while len(self.pending_connections) - self.num_unexpected_connections > 0:
+            iteration_time = _time()
+            if iteration_time - start_time > 180:
+                # We stop waiting to avoid ruining the whole experiment
+                # TODO: Find why this happens sometime
+                logger.warning(f'Missing connections: {self.pending_connections}')
+                break
+
             logger.debug(
                 'Remaining connections to be fully established: '
                 f'{len(self.pending_connections)} '
