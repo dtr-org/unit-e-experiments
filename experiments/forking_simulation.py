@@ -342,8 +342,8 @@ class ForkingSimulation:
             '-debugexclude=leveldb',
             '-mocktime=0',
 
-            f'-stakesplitthreshold={100 * UNIT}',
-            f'-stakecombinemaximum={100 * UNIT}',
+            f'-stakesplitthreshold={50 * UNIT}',
+            f'-stakecombinemaximum={50 * UNIT}',
             f'''-customchainparams={json_dumps({
                 "block_time_seconds": self.block_time_seconds,
                 "block_stake_timestamp_interval_seconds": self.block_stake_timestamp_interval_seconds,
