@@ -21,6 +21,7 @@ from time import time as _time
 from typing import (
     Callable,
     Dict,
+    Iterable,
     List,
     Optional,
     Set,
@@ -70,17 +71,19 @@ class NodesHub:
             self,
             loop: AbstractEventLoop,
             latency_policy: LatencyPolicy,
-            nodes: List[TestNode],
+            nodes: Union[List[TestNode], Dict[int, TestNode]],
             network_stats_collector: NetworkStatsCollector,
             host: str = '127.0.0.1'
     ):
         self.loop = loop
         self.latency_policy = latency_policy
+
+        if isinstance(nodes, list):
+            nodes = {i: n for i, n in enumerate(nodes)}
         self.nodes = nodes
+
         self.pid2node_id: Dict[int, int] = {
-            node.process.pid: node_id for node_id, node in enumerate(self.nodes)
-            # Could be that some nodes are not started
-            if node.process is not None
+            node.process.pid: node_id for node_id, node in self.nodes.items()
         }
 
         self.host = host
@@ -101,7 +104,7 @@ class NodesHub:
         """Sync wrapper around start_proxies"""
         self.loop.run_until_complete(self.start_proxies(node_ids))
 
-    async def start_proxies(self, node_ids: Optional[List[int]] = None):
+    async def start_proxies(self, node_ids: Optional[Iterable[int]] = None):
         """
         This method creates (& starts) a listener proxy for each node, the
         connections from each proxy to the real node that they represent will be
@@ -113,7 +116,7 @@ class NodesHub:
         logger.info('Starting node proxies')
 
         if node_ids is None:
-            node_ids = list(range(len(self.nodes)))
+            node_ids = self.nodes.keys()
 
         for node_id in node_ids:
             self.ports2nodes_map[self.get_p2p_node_port(node_id)] = node_id
@@ -142,7 +145,7 @@ class NodesHub:
     async def biconnect_nodes_as_linked_list(self, nodes_list=None):
         """Connects nodes as a linked list."""
         if nodes_list is None:
-            nodes_list = range(len(self.nodes))
+            nodes_list = list(self.nodes.keys())
 
         if 0 == len(nodes_list):
             return
@@ -183,7 +186,7 @@ class NodesHub:
         self.state = 'closing'
         logger.info('Shutting down NodesHub instance')
 
-        for node in self.nodes:
+        for node in self.nodes.values():
             node.disconnect_p2ps()
 
         self.network_stats_collector.close()
@@ -206,7 +209,7 @@ class NodesHub:
         return p2p_port(node_idx)
 
     def get_p2p_proxy_port(self, node_idx):
-        return p2p_port(len(self.nodes) + 1 + node_idx)
+        return p2p_port(max(self.nodes.keys()) + 2 + node_idx)
 
     def get_proxy_address(self, node_idx):
         return f'{self.host}:{self.get_p2p_proxy_port(node_idx)}'
