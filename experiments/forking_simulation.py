@@ -222,6 +222,7 @@ class ForkingSimulation:
 
         # Unloading the wallets that don't belong to the lucky proposer
         for proposer_id in self.proposer_node_ids:
+            # The wallet file is created in the autofinalization_workaround method
             tmp_wallet = lucky_proposer.get_wallet_rpc(f'n{proposer_id}')
             tmp_wallet.dumpwallet(normpath(self.tmp_dir + f'/n{proposer_id}.wallet'))
             if proposer_id != lucky_proposer_id:
