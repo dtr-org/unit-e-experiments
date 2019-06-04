@@ -101,6 +101,7 @@ class ForkingSimulation:
             network_stats_file_name: str,
             nodes_stats_directory: str,
             graph_model: str = 'preferential_attachment',
+            graph_edges: Optional[Set[Tuple[int, int]]] = None
     ):
         if num_proposer_nodes < 0 or num_relay_nodes < 0:
             raise RuntimeError('Number of nodes must be positive')
@@ -120,10 +121,14 @@ class ForkingSimulation:
         self.num_validator_nodes = num_validator_nodes
         self.num_relay_nodes = num_relay_nodes
         self.num_nodes = num_proposer_nodes + num_validator_nodes + num_relay_nodes
-        self.graph_model = graph_model
-        self.graph_edges: Set[Tuple[int, int]] = set()
         self.latency = latency  # For now just a shared latency parameter.
-        self.define_network_topology()
+
+        # Network topology related settings
+        if graph_edges is None:
+            self.graph_edges: Set[Tuple[int, int]]
+            self.define_network_topology(graph_model)
+        else:
+            self.graph_edges = graph_edges
 
         # Simulation related settings
         self.simulation_time = simulation_time
@@ -496,7 +501,7 @@ class ForkingSimulation:
         for node in nodes.values():
             node.wait_until_stopped()
 
-    def define_network_topology(self):
+    def define_network_topology(self, graph_model: str):
         """This function defines the network's topology"""
 
         self.logger.info('Defining network graph')
@@ -505,7 +510,7 @@ class ForkingSimulation:
             num_nodes=self.num_nodes,
             num_outbound_connections=NUM_OUTBOUND_CONNECTIONS,
             max_inbound_connections=NUM_INBOUND_CONNECTIONS,
-            model=self.graph_model
+            model=graph_model
         )
 
         # We try to avoid having sink sub-graphs
