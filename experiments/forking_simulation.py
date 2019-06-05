@@ -65,9 +65,7 @@ from typing import (
 import test_framework.util as tf_util
 
 from experiments.graph import (
-    enforce_nodes_reconnections,
-    ensure_one_inbound_connection_per_node,
-    create_directed_graph,
+    create_network_graph,
     create_simple_dense_graph
 )
 from network.latencies import StaticLatencyPolicy
@@ -505,26 +503,11 @@ class ForkingSimulation:
         """This function defines the network's topology"""
 
         self.logger.info('Defining network graph')
-
-        graph_edges, inbound_degrees = create_directed_graph(
+        self.graph_edges = create_network_graph(
             num_nodes=self.num_nodes,
             num_outbound_connections=NUM_OUTBOUND_CONNECTIONS,
             max_inbound_connections=NUM_INBOUND_CONNECTIONS,
-            model=graph_model
-        )
-
-        # We try to avoid having sink sub-graphs
-        graph_edges, inbound_degrees = enforce_nodes_reconnections(
-            graph_edges=graph_edges,
-            inbound_degrees=inbound_degrees,
-            num_reconnection_rounds=1,
-        )
-
-        # This fix the rare case where some nodes don't have inbound connections
-        self.graph_edges, _ = ensure_one_inbound_connection_per_node(
-            num_nodes=self.num_nodes,
-            graph_edges=graph_edges,
-            inbound_degrees=inbound_degrees,
+            graph_model=graph_model
         )
 
 

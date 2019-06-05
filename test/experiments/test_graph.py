@@ -13,6 +13,7 @@ from experiments.graph import (
     create_simple_dense_graph,
     create_static_graph,
     create_growing_graph,
+    create_network_graph,
     create_preferential_attachment_graph,
     degrees_distribution,
     enforce_nodes_reconnections,
@@ -206,3 +207,31 @@ def test_create_simple_dense_graph():
             assert len({
                 (i, j) for i, j in graph if i == node_id
             }) == min(len(node_ids) - 1, outbound_degree)
+
+
+def test_create_network_graph():
+    for _ in range(10):
+        # Execute multiple times to take into account the randomness effects.
+        graph_edges = create_network_graph(
+            num_nodes=100,
+            num_outbound_connections=8,
+            max_inbound_connections=125,
+            graph_model='preferential_attachment'
+        )
+
+        # First, we'll check that every node has 8 outbound connections
+        outbound_peers_by_node = {
+            src: {dst for _src, dst in graph_edges if _src == src}
+            for src in {_src for _src, _dst in graph_edges}
+        }
+        for outbound_peers in outbound_peers_by_node.values():
+            assert 8 == len(outbound_peers)
+
+        # Second, we'll check that every node hast at least 1 inbound
+        # connection, and at most 125 inbound connections
+        inbound_peers_by_node = {
+            dst: {src for src, _dst in graph_edges if _dst == dst}
+            for dst in {_dst for _src, _dst in graph_edges}
+        }
+        for inbound_peers in inbound_peers_by_node.values():
+            assert 1 <= len(inbound_peers) <= 125
