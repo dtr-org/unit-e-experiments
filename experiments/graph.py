@@ -213,6 +213,41 @@ def create_simple_dense_graph(
     return directed_edges
 
 
+def create_network_graph(
+    num_nodes: int,
+    num_outbound_connections: int,
+    max_inbound_connections: int,
+    graph_model: str = 'preferential_attachment',
+) -> Set[Tuple[int, int]]:
+    """
+    This function creates a graph ensuring that it holds some properties that
+    makes it suitable to represent a Unit-e network's topology without isolated
+    nor sink nodes.
+    """
+    graph_edges, inbound_degrees = create_directed_graph(
+        num_nodes=num_nodes,
+        num_outbound_connections=num_outbound_connections,
+        max_inbound_connections=max_inbound_connections,
+        model=graph_model
+    )
+
+    # We try to avoid having sink sub-graphs
+    graph_edges, inbound_degrees = enforce_nodes_reconnections(
+        graph_edges=graph_edges,
+        inbound_degrees=inbound_degrees,
+        num_reconnection_rounds=1,
+    )
+
+    # This fix the rare case where some nodes don't have inbound connections
+    graph_edges, _ = ensure_one_inbound_connection_per_node(
+        num_nodes=num_nodes,
+        graph_edges=graph_edges,
+        inbound_degrees=inbound_degrees,
+    )
+
+    return graph_edges
+
+
 def enforce_nodes_reconnections(
         graph_edges: Set[Tuple[int, int]],
         inbound_degrees: Dict[int, int],
