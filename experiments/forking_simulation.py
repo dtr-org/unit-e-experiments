@@ -163,17 +163,14 @@ class ForkingSimulation:
         self.nodes_hub.sync_start_proxies()
         self.nodes_hub.sync_connect_nodes_graph(self.graph_edges)
 
-        if self.num_validator_nodes > 0:
-            # Notice that the "first" proposer already loaded its wallet during
-            # the auto-finalization workaround call, same for the validators.
-            proposer_ids = self.proposer_node_ids[1:]
-        else:
-            proposer_ids = self.proposer_node_ids
+        # Notice that the validators have already loaded their wallets
+        self.logger.info('Importing wallets')
+        for idx, proposer_id in enumerate(self.proposer_node_ids):
+            if idx > 0:
+                self.nodes[proposer_id].createwallet(f'n{proposer_id}')
 
-        for idx, proposer_id in enumerate(proposer_ids):
-            self.nodes[proposer_id].importmasterkey(
-                regtest_mnemonics[idx]['mnemonics']
-            )
+            tmp_wallet = self.nodes[proposer_id].get_wallet_rpc(f'n{proposer_id}')
+            tmp_wallet.importwallet(normpath(self.tmp_dir + f'/n{proposer_id}.wallet'))
 
         self.loop.run_until_complete(self.trigger_simulation_stop())
         return True
@@ -207,29 +204,43 @@ class ForkingSimulation:
         tmp_hub.sync_connect_nodes_graph(dense_graph)
 
         # We have to load some money into the nodes
-        self.nodes[lucky_proposer_id].importmasterkey(
-            regtest_mnemonics[0]['mnemonics']
-        )
-        for idx, validator_id in enumerate(self.validator_node_ids):
-            self.nodes[validator_id].importmasterkey(
-                regtest_mnemonics[self.num_proposer_nodes + idx]['mnemonics']
+        lucky_proposer = self.nodes[lucky_proposer_id]
+        for proposer_id in self.proposer_node_ids:
+            lucky_proposer.createwallet(f'n{proposer_id}')
+            tmp_wallet = lucky_proposer.get_wallet_rpc(f'n{proposer_id}')
+            tmp_wallet.importmasterkey(
+                regtest_mnemonics[proposer_id]['mnemonics']
+            )
+        for validator_id in self.validator_node_ids:
+            self.nodes[validator_id].createwallet(f'n{validator_id}')
+            tmp_wallet = self.nodes[validator_id].get_wallet_rpc(f'n{validator_id}')
+            tmp_wallet.importmasterkey(
+                regtest_mnemonics[validator_id]['mnemonics']
             )
 
-        self.loop.run_until_complete(self.ensure_autofinalization_is_off(
-            validators
-        ))
+        self.loop.run_until_complete(self.ensure_autofinalization_is_off())
+
+        # Unloading the wallets that don't belong to the lucky proposer
+        for proposer_id in self.proposer_node_ids:
+            # The wallet file is created in the autofinalization_workaround method
+            tmp_wallet = lucky_proposer.get_wallet_rpc(f'n{proposer_id}')
+            tmp_wallet.dumpwallet(normpath(self.tmp_dir + f'/n{proposer_id}.wallet'))
+            if proposer_id != lucky_proposer_id:
+                lucky_proposer.unloadwallet(f'n{proposer_id}')
+
         tmp_hub.close()  # We close all temporary connections
 
         # We recover the original topology for the full network
         # self.num_nodes, self.graph_edges = tmp_num_nodes, tmp_graph_edges
         self.logger.info('Finished auto-finalization workaround')
 
-    async def ensure_autofinalization_is_off(self, validators: List[TestNode]):
-        for validator in validators:
-            # TODO: Obtain the available amount dynamically by RPC calls
-            validator.deposit(
-                validator.getnewaddress('', 'legacy'),
-                validator.getbalance() - 1
+    async def ensure_autofinalization_is_off(self):
+        for validator_id in self.validator_node_ids:
+            validator = self.nodes[validator_id]
+            tmp_wallet = validator.get_wallet_rpc(f'n{validator_id}')
+            tmp_wallet.deposit(
+                tmp_wallet.getnewaddress('', 'legacy'),
+                tmp_wallet.getbalance() - 1
             )
 
             # Because the network is blocking due to NodesHub, we have to yield
@@ -269,9 +280,13 @@ class ForkingSimulation:
         return successful_run
 
     async def trigger_simulation_stop(self):
+        self.logger.info(
+            f'Started simulation count-down: {self.simulation_time}s'
+        )
         await asyncio_sleep(self.simulation_time)
         self.is_running = False
         await asyncio_sleep(4 * self.sample_time)
+        self.logger.info('Ending simulation')
 
     def setup_directories(self):
         if self.tmp_dir != '':
@@ -411,6 +426,8 @@ class ForkingSimulation:
                     e
                 )
                 raise
+
+        self.logger.info('Started nodes')
 
     def stop_nodes(self):
         self.logger.info('Stopping nodes')
